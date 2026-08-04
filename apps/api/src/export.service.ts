@@ -1,0 +1,185 @@
+import { Injectable } from "@nestjs/common";
+import PDFDocument from "pdfkit";
+import QRCode from "qrcode";
+import sharp from "sharp";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import type { Candidate, ResultCycle } from "@pathey/types";
+import { sanitizeFilename } from "./domain.js";
+
+const assetPath = (relativePath: string) => {
+  const choices = [
+    resolve(process.env.INIT_CWD ?? process.cwd(), relativePath),
+    resolve(process.cwd(), "../..", relativePath),
+  ];
+  const found = choices.find(existsSync);
+  if (!found) throw new Error(`ASSET_MISSING:${relativePath}`);
+  return found;
+};
+const devanagariFont = assetPath("assets/fonts/NotoSansDevanagari.ttf");
+const boldFont = devanagariFont;
+const escapeXml = (s: string) =>
+  s.replace(
+    /[<>&'"]/g,
+    (c) =>
+      ({
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        "'": "&apos;",
+        '"': "&quot;",
+      })[c]!,
+  );
+const templatePath = () => {
+  const choices = [
+    process.env.CERTIFICATE_TEMPLATE_PATH,
+    join(process.env.INIT_CWD ?? process.cwd(), "certificate-demo.jpeg"),
+    join(process.env.INIT_CWD ?? process.cwd(), "assets", "certificate-demo.jpeg"),
+    resolve(process.cwd(), "../../certificate-demo.jpeg"),
+    resolve(process.cwd(), "../../assets/certificate-demo.jpeg"),
+  ].filter(Boolean) as string[];
+  const found = choices.find(existsSync);
+  if (!found) throw new Error("CERTIFICATE_TEMPLATE_MISSING");
+  return found;
+};
+const collect = (doc: PDFKit.PDFDocument) =>
+  new Promise<Buffer>((ok, fail) => {
+    const chunks: Buffer[] = [];
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => ok(Buffer.concat(chunks)));
+    doc.on("error", fail);
+    doc.end();
+  });
+
+@Injectable()
+export class ExportService {
+  async certificate(cycle: ResultCycle, candidate: Candidate) {
+    const resultDate = new Intl.DateTimeFormat("hi-IN", {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(new Date(`${candidate.resultDate}T00:00:00Z`));
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: 0,
+      info: {
+        Title: `Certificate ${candidate.certificateNumber}`,
+        Author: "Pathey Kan",
+        Subject: `Quiz result ${cycle.resultNumber}`,
+        Keywords: "certificate, quiz",
+      },
+    });
+    doc.image(templatePath(), 0, 0, { width: 841.89, height: 595.28 });
+    doc.registerFont("Noto", devanagariFont);
+    doc.registerFont("NotoBold", boldFont);
+    doc
+      .fillColor("#0a3b72")
+      .font("NotoBold")
+      .fontSize(17)
+      .text(cycle.resultNumber, 455, 273, { width: 85, align: "center" })
+      .text(String(candidate.score), 585, 273, { width: 85, align: "center" });
+    doc
+      .fontSize(21)
+      .text(candidate.nameHindi, 225, 306, { width: 180, align: "center" })
+      .fontSize(17)
+      .text(candidate.guardianName, 505, 306, { width: 185, align: "center" })
+      .fontSize(18)
+      .text(candidate.className, 215, 340, { width: 65, align: "center" })
+      .text(String(candidate.age), 313, 340, { width: 55, align: "center" })
+      .text(String(candidate.rank), 398, 340, { width: 55, align: "center" })
+      .fontSize(12)
+      .fillColor("#152a43")
+      .text(resultDate, 585, 500, { width: 90, align: "center" });
+    return collect(doc);
+  }
+  async qr(url: string, format: "svg" | "png", dark = false) {
+    return format === "svg"
+      ? Buffer.from(
+          await QRCode.toString(url, {
+            type: "svg",
+            errorCorrectionLevel: "H",
+            margin: 4,
+            color: {
+              dark: dark ? "#fdf3e6" : "#092f4f",
+              light: dark ? "#092f4f" : "#fdf3e6",
+            },
+          }),
+        )
+      : QRCode.toBuffer(url, {
+          type: "png",
+          errorCorrectionLevel: "H",
+          margin: 4,
+          width: 2400,
+          color: {
+            dark: dark ? "#fdf3e6" : "#092f4f",
+            light: dark ? "#092f4f" : "#fdf3e6",
+          },
+        });
+  }
+  async qrPdf(url: string, dark = false) {
+    const qr = await this.qr(url, "png", dark);
+    const doc = new PDFDocument({ size: [360, 430], margin: 30 });
+    doc
+      .image(qr, 45, 30, { width: 270, height: 270 })
+      .font("Helvetica-Bold")
+      .fontSize(14)
+      .fillColor("#092f4f")
+      .text("प्रमाण पत्र के लिए स्कैन करें", 30, 320, {
+        width: 300,
+        align: "center",
+      })
+      .font("Helvetica")
+      .fontSize(11)
+      .text("Scan to securely download your certificate", 30, 350, {
+        width: 300,
+        align: "center",
+      });
+    return collect(doc);
+  }
+  private magazineSvg(
+    cycle: ResultCycle,
+    candidates: Candidate[],
+    qrData: string,
+  ) {
+    const rows = candidates
+      .sort((a, b) => a.rank - b.rank)
+      .map(
+        (c, i) =>
+          `<g transform="translate(90 ${540 + i * 116})"><circle cx="35" cy="35" r="31" fill="#f36a21"/><text x="35" y="46" text-anchor="middle" class="rank">${c.rank}</text><text x="95" y="30" class="name">${escapeXml(c.nameHindi)}</text><text x="95" y="68" class="city">${escapeXml(c.city)}</text></g>`,
+      )
+      .join("");
+    return `<svg width="2480" height="3508" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fff5e7"/><rect x="55" y="55" width="2370" height="3398" rx="20" fill="none" stroke="#22b8b2" stroke-width="7"/><rect x="55" y="55" width="2370" height="235" fill="#0b3e68"/><text x="1240" y="160" text-anchor="middle" class="brand">पाथेय कण</text><text x="1240" y="410" text-anchor="middle" class="title">बाल प्रश्नोत्तरी ${escapeXml(cycle.resultNumber)} के</text><text x="1240" y="485" text-anchor="middle" class="heading">टॉप 10 परिणाम</text>${rows}<rect x="1530" y="620" width="720" height="1040" rx="30" fill="#ffffff" stroke="#f36a21" stroke-width="6"/><image x="1690" y="730" width="400" height="400" href="${qrData}"/><text x="1890" y="1200" text-anchor="middle" class="scan">प्रमाण पत्र डाउनलोड करें</text><text x="1890" y="1250" text-anchor="middle" class="small">Scan to claim your certificate</text><text x="1890" y="1330" text-anchor="middle" class="small">अंतिम तिथि: ${new Date(cycle.expiresAt).toLocaleDateString("hi-IN", { timeZone: "Asia/Kolkata" })}</text><text x="1890" y="1480" text-anchor="middle" class="issue">अंक ${escapeXml(cycle.issueNumber)}</text><path d="M1530 1800h720" stroke="#22b8b2" stroke-width="5"/><text x="1890" y="1930" text-anchor="middle" class="scan">विजेताओं को हार्दिक बधाई</text><text x="1890" y="2010" text-anchor="middle" class="small">Certificate access is private.</text><text x="1890" y="2060" text-anchor="middle" class="small">Use the reference ID and claim code</text><text x="1890" y="2110" text-anchor="middle" class="small">provided separately by the office.</text><style>@font-face{font-family:Noto;src:url('${devanagariFont}')}text{font-family:Noto,Arial,sans-serif;fill:#0b3e68}.brand{font-size:92px;font-weight:700;fill:#fff}.title{font-size:56px}.heading{font-size:76px;font-weight:700;fill:#f36a21}.rank{font-size:39px;font-weight:700;fill:#fff}.name{font-size:46px;font-weight:700}.city{font-size:32px;fill:#456071}.scan{font-size:38px;font-weight:700}.small{font-size:27px}.issue{font-size:34px;fill:#f36a21}</style></svg>`;
+  }
+  async magazine(
+    cycle: ResultCycle,
+    candidates: Candidate[],
+    format: "png" | "pdf",
+    url: string,
+  ) {
+    const qr = await this.qr(url, "png");
+    const svg = this.magazineSvg(
+      cycle,
+      candidates,
+      `data:image/png;base64,${qr.toString("base64")}`,
+    );
+    if (format === "png")
+      return sharp(Buffer.from(svg))
+        .png({ quality: 100, compressionLevel: 9 })
+        .withMetadata({ density: 300 })
+        .toBuffer();
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 0,
+      info: {
+        Title: `Top 10 Results ${cycle.resultNumber}`,
+        Author: "Pathey Kan",
+      },
+    });
+    doc.image(png, 0, 0, { width: 595.28, height: 841.89 });
+    return collect(doc);
+  }
+  filename(candidate: Candidate) {
+    return `${sanitizeFilename(candidate.nameEnglish)}-${sanitizeFilename(candidate.certificateNumber)}.pdf`;
+  }
+}

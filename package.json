@@ -1,0 +1,24 @@
+{
+  "name": "pathey-kan-certificate-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "dev": "concurrently -n api,web,warm -c cyan,orange,green \"npm run dev -w @pathey/api\" \"npm run dev -w @pathey/web\" \"node scripts/warm-dev.mjs\"",
+    "build": "npm run build -w @pathey/types && npm run build -w @pathey/api && npm run build -w @pathey/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test -w @pathey/api",
+    "test:e2e": "playwright test",
+    "seed": "node supabase/seed/seed.mjs",
+    "format": "prettier --write .",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "concurrently": "9.2.4",
+    "prettier": "3.6.2",
+    "typescript": "5.9.3"
+  }
+}

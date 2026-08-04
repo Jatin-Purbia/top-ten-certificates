@@ -1,0 +1,53 @@
+{
+  "name": "@pathey/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-express": "11.1.28",
+    "@nestjs/swagger": "11.4.5",
+    "@pathey/config": "*",
+    "@pathey/types": "*",
+    "@supabase/supabase-js": "2.112.0",
+    "argon2": "0.45.1",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.14.2",
+    "cookie-parser": "1.4.7",
+    "helmet": "8.1.0",
+    "jose": "6.2.8",
+    "nanoid": "5.1.5",
+    "nestjs-pino": "4.5.0",
+    "pdfkit": "0.17.2",
+    "pino-http": "11.0.0",
+    "qrcode": "1.5.4",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "sharp": "0.35.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "@types/node": "24.10.1",
+    "@types/pdfkit": "0.17.4",
+    "@types/qrcode": "1.5.6",
+    "eslint": "9.39.2",
+    "globals": "16.5.0",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.52.0",
+    "vitest": "4.1.10"
+  }
+}

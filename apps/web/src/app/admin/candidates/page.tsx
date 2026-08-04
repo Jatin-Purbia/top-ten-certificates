@@ -1,0 +1,6 @@
+'use client';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { Badge, Card } from '@pathey/ui';
+import { adminFetch, formatIndia } from '@/lib/api';
+export default function Candidates(){const{data,isPending,error}=useQuery({queryKey:['cycles'],queryFn:()=>adminFetch<any>('/admin/cycles?pageSize=100')});const cycles=data?.data??[];return <><div className="page-head"><div><h1>Candidate management</h1><p>Open a cycle to add, import, reorder, preview, or manage private claim credentials.</p></div></div><Card>{isPending?<p>Loading…</p>:error?<p className="notice notice-danger">{error.message}</p>:cycles.length===0?<p className="empty">No result cycles are available.</p>:<div className="table-wrap"><table><thead><tr><th>Cycle</th><th>Status</th><th>Candidates</th><th>Deadline</th><th/></tr></thead><tbody>{cycles.map((c:any)=><tr key={c.id}><td><strong>{c.title}</strong> · {c.resultNumber}</td><td><Badge tone={c.status==='published'?'success':'warning'}>{c.status}</Badge></td><td>{c.candidateCount}</td><td>{formatIndia(c.expiresAt)}</td><td><Link className="btn btn-secondary" href={`/admin/cycles/${c.id}`}>Manage candidates</Link></td></tr>)}</tbody></table></div>}</Card></>}

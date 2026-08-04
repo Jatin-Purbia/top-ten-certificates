@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext", "moduleResolution": "NodeNext", "baseUrl": ".", "experimentalDecorators": true,
+    "emitDecoratorMetadata": true, "allowSyntheticDefaultImports": true, "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
