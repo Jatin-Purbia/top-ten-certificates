@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   candidateInputSchema,
@@ -26,20 +26,63 @@ const fieldLabels: Record<keyof CandidateInput, string> = {
   resultDate: "Date on certificate",
   photoPath: "Photo path",
 };
-const emptyRow = () => ({ nameHindi: "", nameEnglish: "", phone: "" });
-const QUICK_ADD_SIZE = 10;
+// Shared by the add and edit forms so both ask for exactly the same fields.
+function CandidateFields({ form }: { form: UseFormReturn<CandidateInput> }) {
+  return (
+    <>
+      {(
+        [
+          "participantId",
+          "certificateNumber",
+          "phone",
+          "nameHindi",
+          "nameEnglish",
+          "guardianName",
+          "className",
+          "city",
+        ] as const
+      ).map((k) => (
+        <Field
+          key={k}
+          label={fieldLabels[k]}
+          type={k === "phone" ? "tel" : undefined}
+          {...form.register(k)}
+          error={form.formState.errors[k]?.message}
+        />
+      ))}
+      <Field
+        label={fieldLabels.age}
+        type="number"
+        {...form.register("age", { valueAsNumber: true })}
+        error={form.formState.errors.age?.message}
+      />
+      <Field
+        label={fieldLabels.score}
+        type="number"
+        step="0.01"
+        {...form.register("score", { valueAsNumber: true })}
+        error={form.formState.errors.score?.message}
+      />
+      <Field
+        label={fieldLabels.rank}
+        type="number"
+        {...form.register("rank", { valueAsNumber: true })}
+        error={form.formState.errors.rank?.message}
+      />
+      <Field
+        label={fieldLabels.resultDate}
+        type="date"
+        {...form.register("resultDate")}
+        error={form.formState.errors.resultDate?.message}
+      />
+    </>
+  );
+}
 
 export function CycleWorkspace({ id }: { id: string }) {
   const qc = useQueryClient(),
-    [added, setAdded] = useState(""),
     [error, setError] = useState("");
-  const [quickOpen, setQuickOpen] = useState(false),
-    [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10)),
-    [quickRows, setQuickRows] = useState(
-      Array.from({ length: QUICK_ADD_SIZE }, emptyRow),
-    ),
-    [quickError, setQuickError] = useState(""),
-    [quickPending, setQuickPending] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Candidate | null>(null);
   const cycle = useQuery({
       queryKey: ["cycle", id],
@@ -63,64 +106,22 @@ export function CycleWorkspace({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["candidates", id] });
     },
   });
-  const importRows = async (rows: unknown[]) => {
-    const v = await adminFetch<any>(
-      `/admin/cycles/${id}/candidates/import/validate`,
-      { method: "POST", body: JSON.stringify({ rows }) },
-    );
-    if (!v.data.valid)
-      throw new Error(
-        v.data.errors
-          .map(
-            (x: any) =>
-              `Row ${x.row}: ${x.issues.map((i: any) => i.message).join(", ")}`,
-          )
-          .join("\n"),
-      );
-    const result = await adminFetch<any>(
-      `/admin/cycles/${id}/candidates/import/commit`,
-      { method: "POST", body: JSON.stringify({ rows: v.data.rows }) },
-    );
-    setAdded(`Added ${result.data.count} candidate(s).`);
-    qc.invalidateQueries({ queryKey: ["candidates", id] });
-    qc.invalidateQueries({ queryKey: ["cycle", id] });
-  };
-  const submitQuickAdd = async () => {
-    setQuickError("");
-    const resultNumber = cycle.data?.data?.resultNumber ?? "0";
-    const rows = quickRows
-      .map((row, i) => ({ ...row, rank: i + 1 }))
-      .filter((row) => row.nameHindi.trim() !== "")
-      .map((row) => ({
-        participantId: `${resultNumber}-${row.rank}`,
-        certificateNumber: `PK${resultNumber}-${String(row.rank).padStart(3, "0")}`,
-        phone: row.phone.trim(),
-        nameHindi: row.nameHindi.trim(),
-        nameEnglish: row.nameEnglish.trim() || row.nameHindi.trim(),
-        guardianName: "Pending",
-        className: "Pending",
-        age: 10,
-        city: "Pending",
-        score: 0,
-        rank: row.rank,
-        resultDate: quickDate,
-        photoPath: null,
-      }));
-    if (!rows.length) {
-      setQuickError("Enter at least one candidate name.");
-      return;
-    }
-    setQuickPending(true);
-    try {
-      await importRows(rows);
-      setQuickOpen(false);
-      setQuickRows(Array.from({ length: QUICK_ADD_SIZE }, emptyRow));
-    } catch (err) {
-      setQuickError((err as Error).message);
-    } finally {
-      setQuickPending(false);
-    }
-  };
+  const addForm = useForm<CandidateInput>({
+    resolver: zodResolver(candidateInputSchema),
+  });
+  const create = useMutation<any, Error, CandidateInput>({
+    mutationFn: (v: CandidateInput) =>
+      adminFetch<any>(`/admin/cycles/${id}/candidates`, {
+        method: "POST",
+        body: JSON.stringify(v),
+      }),
+    onSuccess: () => {
+      setAdding(false);
+      addForm.reset();
+      qc.invalidateQueries({ queryKey: ["candidates", id] });
+      qc.invalidateQueries({ queryKey: ["cycle", id] });
+    },
+  });
   const publish = async () => {
     if (
       !confirm(
@@ -179,25 +180,6 @@ export function CycleWorkspace({ id }: { id: string }) {
           </p>
         </div>
         <div className="actions">
-          <Button
-            variant="secondary"
-            onClick={() =>
-              downloadAdmin(`/admin/cycles/${id}/qr?format=svg`, "cycle-qr.svg")
-            }
-          >
-            QR SVG
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() =>
-              downloadAdmin(
-                `/admin/cycles/${id}/magazine-export?format=pdf`,
-                "top-10.pdf",
-              )
-            }
-          >
-            Magazine PDF
-          </Button>
           {c.status === "draft" && (
             <Button onClick={publish}>Publish cycle</Button>
           )}
@@ -209,14 +191,6 @@ export function CycleWorkspace({ id }: { id: string }) {
         </div>
       </div>
       {error && <p className="notice notice-danger">{error}</p>}
-      {added && (
-        <p className="notice notice-success">
-          {added}{" "}
-          <button className="btn btn-secondary" onClick={() => setAdded("")}>
-            Dismiss
-          </button>
-        </p>
-      )}
       <div className="metrics">
         <Card className="metric">
           <div className="metric-label">Candidates</div>
@@ -251,44 +225,14 @@ export function CycleWorkspace({ id }: { id: string }) {
             <p>Certificates are accessed with the mobile number on file.</p>
           </div>
           <div className="actions">
-            <a
-              className="btn btn-secondary"
-              href="/candidate-import-template.csv"
-              download
-            >
-              CSV template
-            </a>
             <Button
-              variant="secondary"
-              onClick={() => document.getElementById("csv-input")?.click()}
-            >
-              Import CSV
-            </Button>
-            <input
-              id="csv-input"
-              hidden
-              type="file"
-              accept=".csv,text/csv"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                try {
-                  const rows = parseCsv(await f.text());
-                  if (!confirm(`Import ${rows.length} candidates from this file?`))
-                    return;
-                  await importRows(rows);
-                } catch (err) {
-                  alert((err as Error).message);
-                } finally {
-                  e.target.value = "";
-                }
+              onClick={() => {
+                addForm.reset();
+                setAdding(true);
               }}
-            />
-            <Button
-              onClick={() => setQuickOpen(true)}
               disabled={c.status === "purged"}
             >
-              Quick add Top 10
+              Add candidate
             </Button>
           </div>
         </div>
@@ -383,115 +327,41 @@ export function CycleWorkspace({ id }: { id: string }) {
           </div>
         )}
       </Card>
-      {quickOpen && (
+      {adding && (
         <div className="modal-backdrop">
-          <div className="modal" style={{ width: "min(900px,100%)" }}>
-            <h2>Quick add Top 10</h2>
+          <div className="modal">
+            <h2>Add candidate</h2>
             <p>
-              Enter each candidate&rsquo;s name and mobile number; rank is set
-              by row position. Leave a row blank to skip it. Guardian name,
-              class, age, city and score are filled with a placeholder you
-              can correct later using Edit.
+              The approved certificate prints the Hindi name, guardian name,
+              class, age, rank, score and date. City and the English name are
+              used for the magazine and administration only.
             </p>
-            <Field
-              label="Result date (applies to all rows)"
-              type="date"
-              value={quickDate}
-              onChange={(e) => setQuickDate(e.target.value)}
-            />
-            <div className="table-wrap" style={{ marginTop: 12 }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: 60 }}>Rank</th>
-                    <th>Name (Hindi)</th>
-                    <th>Name (English)</th>
-                    <th>Mobile number</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quickRows.map((row, i) => (
-                    <tr key={i}>
-                      <td>
-                        <strong>#{i + 1}</strong>
-                      </td>
-                      <td>
-                        <input
-                          className="input"
-                          value={row.nameHindi}
-                          onChange={(e) =>
-                            setQuickRows((rows) =>
-                              rows.map((r, j) =>
-                                j === i ? { ...r, nameHindi: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          placeholder="अनया जोशी"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="input"
-                          value={row.nameEnglish}
-                          onChange={(e) =>
-                            setQuickRows((rows) =>
-                              rows.map((r, j) =>
-                                j === i
-                                  ? { ...r, nameEnglish: e.target.value }
-                                  : r,
-                              ),
-                            )
-                          }
-                          placeholder="Anaya Joshi"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="input"
-                          type="tel"
-                          value={row.phone}
-                          onChange={(e) =>
-                            setQuickRows((rows) =>
-                              rows.map((r, j) =>
-                                j === i ? { ...r, phone: e.target.value } : r,
-                              ),
-                            )
-                          }
-                          placeholder="9800000000"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {quickError && (
-              <p className="notice notice-danger" style={{ marginTop: 12 }}>
-                {quickError}
-              </p>
-            )}
-            <div
-              className="actions"
-              style={{ marginTop: 20, justifyContent: "flex-end" }}
+            <form
+              className="form-grid"
+              onSubmit={addForm.handleSubmit((v) => create.mutate(v))}
             >
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setQuickOpen(false);
-                  setQuickError("");
-                }}
+              <CandidateFields form={addForm} />
+              {create.error && (
+                <p className="notice notice-danger span-2">
+                  {create.error.message}
+                </p>
+              )}
+              <div
+                className="actions span-2"
+                style={{ justifyContent: "flex-end" }}
               >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={submitQuickAdd}
-                disabled={quickPending}
-              >
-                {quickPending ? "Saving…" : "Save all"}
-              </Button>
-            </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setAdding(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={create.isPending}>
+                  {create.isPending ? "Saving…" : "Add candidate"}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -508,51 +378,7 @@ export function CycleWorkspace({ id }: { id: string }) {
               className="form-grid"
               onSubmit={editForm.handleSubmit((v) => edit.mutate(v))}
             >
-              {(
-                [
-                  "participantId",
-                  "certificateNumber",
-                  "phone",
-                  "nameHindi",
-                  "nameEnglish",
-                  "guardianName",
-                  "className",
-                  "city",
-                ] as const
-              ).map((k) => (
-                <Field
-                  key={k}
-                  label={fieldLabels[k]}
-                  type={k === "phone" ? "tel" : undefined}
-                  {...editForm.register(k)}
-                  error={editForm.formState.errors[k]?.message}
-                />
-              ))}
-              <Field
-                label={fieldLabels.age}
-                type="number"
-                {...editForm.register("age", { valueAsNumber: true })}
-                error={editForm.formState.errors.age?.message}
-              />
-              <Field
-                label={fieldLabels.score}
-                type="number"
-                step="0.01"
-                {...editForm.register("score", { valueAsNumber: true })}
-                error={editForm.formState.errors.score?.message}
-              />
-              <Field
-                label={fieldLabels.rank}
-                type="number"
-                {...editForm.register("rank", { valueAsNumber: true })}
-                error={editForm.formState.errors.rank?.message}
-              />
-              <Field
-                label={fieldLabels.resultDate}
-                type="date"
-                {...editForm.register("resultDate")}
-                error={editForm.formState.errors.resultDate?.message}
-              />
+              <CandidateFields form={editForm} />
               {edit.error && (
                 <p className="notice notice-danger span-2">
                   {edit.error.message}
@@ -579,38 +405,4 @@ export function CycleWorkspace({ id }: { id: string }) {
       )}
     </>
   );
-}
-function parseCsv(text: string) {
-  const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
-      .split(/\r?\n/)
-      .filter(Boolean),
-    headers = split(lines.shift() ?? "");
-  return lines.map((line) => {
-    const cells = split(line),
-      o: any = {};
-    headers.forEach((h, i) => (o[h] = cells[i] ?? ""));
-    o.age = Number(o.age);
-    o.score = Number(o.score);
-    o.rank = Number(o.rank);
-    o.photoPath = o.photoPath || null;
-    return o;
-  });
-}
-function split(line: string) {
-  const out: string[] = [];
-  let value = "",
-    quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '\"' && line[i + 1] === '\"') {
-      value += '\"';
-      i++;
-    } else if (c === '\"') quoted = !quoted;
-    else if (c === "," && !quoted) {
-      out.push(value.trim());
-      value = "";
-    } else value += c;
-  }
-  out.push(value.trim());
-  return out;
 }

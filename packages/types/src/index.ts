@@ -30,8 +30,8 @@ export type CandidateInput = z.infer<typeof candidateInputSchema>;
 export type Candidate = CandidateInput & { id: string; cycleId: string; publicCertificateId: string; downloadCount: number; firstDownloadedAt: string | null; lastDownloadedAt: string | null; createdAt: string; updatedAt: string };
 
 export const cycleInputSchema = z.object({
-  title: z.string().trim().min(3).max(160), resultNumber: z.string().trim().min(1).max(40),
-  issueNumber: z.string().trim().min(1).max(40), publicationAt: z.string().datetime(),
+  title: z.string().trim().min(3).max(160), resultNumber: z.string().trim().max(40).optional(),
+  issueNumber: z.string().trim().max(40).optional(), publicationAt: z.string().datetime(),
   certificateTemplateId: z.string().uuid().nullable().optional(), status: z.enum(['draft', 'scheduled']).optional()
 });
 export type CycleInput = z.infer<typeof cycleInputSchema>;

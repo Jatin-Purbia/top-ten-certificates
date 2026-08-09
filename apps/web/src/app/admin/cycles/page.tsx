@@ -30,10 +30,6 @@ export default function Cycles() {
         `/admin/cycles?search=${encodeURIComponent(search)}&status=${status}`,
       ),
   });
-  const templates = useQuery({
-    queryKey: ["templates"],
-    queryFn: () => adminFetch<any>("/admin/templates"),
-  });
   const form = useForm<CycleInput>({
     resolver: zodResolver(cycleInputSchema),
     defaultValues: {
@@ -180,17 +176,6 @@ export default function Cycles() {
                 })}
                 error={form.formState.errors.publicationAt?.message}
               />
-              <label className="field span-2">
-                Approved certificate template
-                <select {...form.register("certificateTemplateId")}>
-                  <option value="">Select template</option>
-                  {templates.data?.data.map((t: any) => (
-                    <option value={t.id} key={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               {create.error && (
                 <p className="notice notice-danger span-2">
                   {create.error.message}
