@@ -57,10 +57,18 @@ const secret = () =>
     process.env.COOKIE_SECRET ?? "development-only-cookie-secret-32chars",
   );
 const claimCookie = "pk_claim_session";
+const production = process.env.NODE_ENV === "production";
+// The web app and API are deployed on different domains (Vercel/Render), so
+// this cookie must be sent cross-site — that requires SameSite=None, which
+// browsers only honor when Secure is also set. Locally the app is served
+// over http on the same site (just a different port), where SameSite=None
+// without Secure would be rejected outright, so dev keeps the stricter
+// same-site policy instead.
+const claimCookieSameSite: "none" | "strict" = production ? "none" : "strict";
 const cookieOptions = (maxAge: number) => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  secure: production,
+  sameSite: claimCookieSameSite,
   path: "/api/v1/public",
   maxAge,
 });
