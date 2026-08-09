@@ -7,5 +7,6 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
+  // Minor edit: no functional change — timestamp for redeploy trigger
   return <ClaimPortal />;
 }
