@@ -1,10 +1,11 @@
 # Security assumptions and boundaries
 
-- Administrator identity comes from Supabase Auth. The API validates JWTs and reads the current role from `admin_profiles`; browser role claims are never authoritative.
-- All exposed tables use RLS. Candidate PII, claim hashes, sessions, download events and all writes intentionally have no browser policies. Only the backend service role reaches them.
-- Claim codes use Argon2id and are returned only at creation/reset. Logs redact credentials, candidate imports, cookies and authorization headers.
-- Public errors do not distinguish an unknown participant from an invalid code. Per-IP and hashed-participant throttling locks repeated failures. A production edge/WAF CAPTCHA can be added after the API returns `429`.
+- Administrator identity comes from a self-issued JWT (HS256, signed with `ADMIN_JWT_SECRET`) minted by `POST /admin/auth/login` after an Argon2id password verification. The API re-reads the current role from `admin_profiles` on every request; browser role claims are never authoritative.
+- MongoDB has no row-level security equivalent, so authorization is entirely application-layer: every collection is only ever reached through the backend service process, which runs with a single set of database credentials. There is intentionally no browser-facing database client or public read path into candidate collections.
+- The public claim flow authenticates by mobile number alone (no second factor) — this is a deliberate simplification chosen for this deployment. Anyone who knows or guesses a candidate's phone number can view/download that candidate's certificate (name, guardian's name, class, city). Logs redact phone numbers, candidate imports, cookies and authorization headers.
+- Public errors do not distinguish an unknown phone number from a rate-limited one beyond the `429` response. Per-IP and hashed-phone throttling locks repeated lookups. A production edge/WAF CAPTCHA can be added after the API returns `429`.
 - Public sessions are signed, short-lived, HttpOnly, Secure in production and SameSite Strict. Download is additionally bound to a CSRF token.
-- PDFs are generated server-side from the approved background with an embedded Noto Sans Devanagari font. No claim credential is placed in the PDF metadata or filename.
-- The API CORS allowlist, Helmet headers, body limits, upload allowlists and private buckets must remain enabled in production. Rotate `COOKIE_SECRET` and `INTERNAL_JOB_SECRET` through the deployment secret manager.
-- Database backups may contain candidate records until Supabase backup retention expires. The live application irreversibly deletes records at expiry; physical backup destruction follows the provider retention contract and must be reflected in the privacy notice.
+- PDFs are generated server-side from the approved background with an embedded Noto Sans Devanagari font. No credential or phone number is placed in the PDF metadata or filename.
+- The API CORS allowlist, Helmet headers, body limits, and private local/mounted storage for candidate photos must remain enabled in production. Rotate `COOKIE_SECRET`, `ADMIN_JWT_SECRET`, and `INTERNAL_JOB_SECRET` independently through the deployment secret manager — a leak of one must not compromise the others.
+- Candidate import and cycle purge run inside MongoDB multi-document transactions (requiring a replica set) so an import or purge either fully applies or fully rolls back.
+- Database backups may contain candidate records until the MongoDB backup/oplog retention window expires. The live application irreversibly deletes records at expiry; physical backup destruction follows the deployment's retention contract and must be reflected in the privacy notice.

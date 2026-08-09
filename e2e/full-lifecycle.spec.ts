@@ -34,6 +34,7 @@ test('complete certificate lifecycle is private, time-bound, and purgeable', asy
   const rows = Array.from({ length: 10 }, (_, index) => ({
     participantId: `E2E-${suffix}-${index + 1}`,
     certificateNumber: `CERT-${suffix}-${index + 1}`,
+    phone: `9${suffix}${index}`,
     nameHindi: `परीक्षण विद्यार्थी ${index + 1}`,
     nameEnglish: `Test Student ${index + 1}`,
     guardianName: 'Demo Guardian',
@@ -44,8 +45,7 @@ test('complete certificate lifecycle is private, time-bound, and purgeable', asy
   expect((await validate.json()).data.valid).toBe(true);
   const imported = await request.post(`${api}/admin/cycles/${cycle.id}/candidates/import/commit`, { headers: adminHeaders, data: { rows } });
   expect(imported.ok()).toBeTruthy();
-  const credentials = (await imported.json()).data.credentials;
-  expect(credentials).toHaveLength(10);
+  expect((await imported.json()).data.count).toBe(10);
 
   const forbidden = await request.post(`${api}/admin/cycles`, { headers: { 'x-demo-admin': 'demo-viewer' }, data: { title: 'Forbidden', resultNumber: 'X', issueNumber: 'X', publicationAt: new Date().toISOString() } });
   expect(forbidden.status()).toBe(403);
@@ -63,12 +63,10 @@ test('complete certificate lifecycle is private, time-bound, and purgeable', asy
   expect((await qrDownload).suggestedFilename()).toMatch(/\.svg$/);
 
   await page.goto(`/certificate/${cycle.publicSlug}`);
-  await page.getByLabel('Participant / Reference ID').fill(credentials[0].participantId);
-  await page.getByLabel('Private certificate claim code').fill(credentials[1].claimCode);
+  await page.getByLabel('Mobile number').fill('9999999999');
   await page.getByRole('button', { name: 'Generate my certificate' }).click();
-  await expect(page.getByText('The reference ID or claim code is incorrect.')).toBeVisible();
-  await page.getByLabel('Participant / Reference ID').fill(credentials[0].participantId);
-  await page.getByLabel('Private certificate claim code').fill(credentials[0].claimCode);
+  await expect(page.getByText('No certificate was found for this mobile number.')).toBeVisible();
+  await page.getByLabel('Mobile number').fill(rows[0].phone);
   await page.getByRole('button', { name: 'Generate my certificate' }).click();
   await expect(page.getByRole('heading', { name: 'Your personalised certificate is ready' })).toBeVisible();
   const certificateDownload = page.waitForEvent('download');

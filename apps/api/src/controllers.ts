@@ -32,11 +32,12 @@ import {
   ClaimRateLimiter,
   Public,
   Roles,
+  adminSecret,
   type AdminRequest,
 } from "./security.js";
 import { publicCycleState, sha256 } from "./domain.js";
 
-const genericClaimError = "The reference ID or claim code is incorrect.";
+const genericClaimError = "No certificate was found for this mobile number.";
 const expiredEn =
   "The certificate download period for this result has ended. Please contact the publication office if you require assistance.";
 const expiredHi =
@@ -109,8 +110,7 @@ export class PublicController {
   }
   @Post("claims/verify")
   @ApiOperation({
-    summary:
-      "Verify private candidate credentials without revealing participant existence",
+    summary: "Look up a candidate's certificate by mobile number",
   })
   async verify(
     @Body() body: unknown,
@@ -118,7 +118,7 @@ export class PublicController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const input = parse(claimSchema, body),
-      key = `${req.ip}:${sha256(input.participantId.toLowerCase())}`;
+      key = `${req.ip}:${sha256(input.phone)}`;
     this.limiter.check(key);
     const cycle = await this.store.getCycleBySlug(input.cycleSlug);
     if (!cycle) throw new UnauthorizedException(genericClaimError);
@@ -134,11 +134,7 @@ export class PublicController {
         code: "CERTIFICATE_NOT_AVAILABLE",
         message: "Certificates are not available for this result yet.",
       });
-    const candidate = await this.store.verifyClaim(
-      cycle.id,
-      input.participantId,
-      input.claimCode,
-    );
+    const candidate = await this.store.verifyClaim(cycle.id, input.phone);
     if (!candidate) throw new UnauthorizedException(genericClaimError);
     this.limiter.clear(key);
     const ttl = Math.max(
@@ -269,6 +265,36 @@ export class AdminController {
     @Inject(Store) private readonly store: Store,
     @Inject(ExportService) private readonly exports: ExportService,
   ) {}
+  @Post("auth/login")
+  @Public()
+  @ApiOperation({ summary: "Administrator email/password sign-in" })
+  async login(@Body() body: unknown) {
+    const { email, password } = parse(
+      z.object({ email: z.string().trim().email(), password: z.string().min(1) }),
+      body,
+    );
+    const admin = await this.store.verifyAdminPassword(email, password);
+    if (!admin)
+      throw new UnauthorizedException("Invalid email or password.");
+    const token = await new SignJWT({ role: admin.role })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject(admin.id)
+      .setIssuedAt()
+      .setExpirationTime("12h")
+      .setJti(randomBytes(12).toString("hex"))
+      .sign(adminSecret());
+    return {
+      data: {
+        token,
+        admin: {
+          id: admin.id,
+          email: admin.email,
+          displayName: admin.displayName,
+          role: admin.role,
+        },
+      },
+    };
+  }
   @Get("dashboard") async dashboard() {
     return { data: await this.store.dashboard() };
   }
@@ -448,6 +474,13 @@ export class AdminController {
           row: 0,
           issues: [{ field: "rank", message: `Duplicate rank: ${value}` }],
         });
+    const phones = parsed.map((r) => r.phone);
+    for (const value of new Set(phones))
+      if (phones.filter((x) => x === value).length > 1)
+        errors.push({
+          row: 0,
+          issues: [{ field: "phone", message: `Duplicate mobile number: ${value}` }],
+        });
     return { parsed, errors };
   }
   @Post("cycles/:id/candidates/import/validate")
@@ -485,27 +518,7 @@ export class AdminController {
       id,
       { count: result.length },
     );
-    return {
-      data: {
-        count: result.length,
-        credentials: result.map((x) => ({
-          participantId: x.candidate.participantId,
-          claimCode: x.claimCode,
-        })),
-      },
-    };
-  }
-  @Post("candidates/:id/reset-claim-code")
-  @Roles("super_admin", "certificate_admin")
-  async reset(@Param("id") id: string, @Req() req: AdminRequest) {
-    const code = await this.store.resetCode(id, actor(req));
-    if (!code) throw new NotFoundException("Candidate not found");
-    return {
-      data: {
-        claimCode: code,
-        notice: "This code is shown once and cannot be retrieved later.",
-      },
-    };
+    return { data: { count: result.length } };
   }
   @Get("candidates/:id/certificate-preview") async candidatePreview(
     @Param("id") id: string,

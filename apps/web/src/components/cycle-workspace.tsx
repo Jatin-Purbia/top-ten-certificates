@@ -13,6 +13,7 @@ import { adminFetch, downloadAdmin, formatIndia } from "@/lib/api";
 const blank: CandidateInput = {
   participantId: "",
   certificateNumber: "",
+  phone: "",
   nameHindi: "",
   nameEnglish: "",
   guardianName: "",
@@ -27,11 +28,8 @@ const blank: CandidateInput = {
 export function CycleWorkspace({ id }: { id: string }) {
   const qc = useQueryClient(),
     [addOpen, setAddOpen] = useState(false),
-    [credential, setCredential] = useState<{
-      participantId: string;
-      claimCode: string;
-    } | null>(null),
-    [error, setError] = useState("");
+    [added, setAdded] = useState("");
+  const [error, setError] = useState("");
   const cycle = useQuery({
       queryKey: ["cycle", id],
       queryFn: () => adminFetch<any>(`/admin/cycles/${id}`),
@@ -51,10 +49,9 @@ export function CycleWorkspace({ id }: { id: string }) {
         body: JSON.stringify(v),
       }),
     onSuccess: (r) => {
-      setCredential({
-        participantId: r.data.candidate.participantId,
-        claimCode: r.data.claimCode,
-      });
+      setAdded(
+        `Added ${r.data.candidate.participantId} (${r.data.candidate.phone}).`,
+      );
       setAddOpen(false);
       form.reset(blank);
       qc.invalidateQueries({ queryKey: ["candidates", id] });
@@ -149,6 +146,14 @@ export function CycleWorkspace({ id }: { id: string }) {
         </div>
       </div>
       {error && <p className="notice notice-danger">{error}</p>}
+      {added && (
+        <p className="notice notice-success">
+          {added}{" "}
+          <button className="btn btn-secondary" onClick={() => setAdded("")}>
+            Dismiss
+          </button>
+        </p>
+      )}
       <div className="metrics">
         <Card className="metric">
           <div className="metric-label">Candidates</div>
@@ -180,7 +185,7 @@ export function CycleWorkspace({ id }: { id: string }) {
         <div className="page-head">
           <div>
             <h2>Candidates</h2>
-            <p>Claim codes are disclosed only at creation or reset.</p>
+            <p>Certificates are accessed with the mobile number on file.</p>
           </div>
           <div className="actions">
             <a
@@ -230,7 +235,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                       body: JSON.stringify({ rows: v.data.rows }),
                     },
                   );
-                  downloadCredentials(result.data.credentials);
+                  setAdded(`Imported ${result.data.count} candidates.`);
                   qc.invalidateQueries({ queryKey: ["candidates", id] });
                 } catch (err) {
                   alert((err as Error).message);
@@ -259,6 +264,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                   <th>Rank</th>
                   <th>Candidate</th>
                   <th>Reference ID</th>
+                  <th>Mobile</th>
                   <th>City</th>
                   <th>Score</th>
                   <th>Download</th>
@@ -279,6 +285,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                       </span>
                     </td>
                     <td>{p.participantId}</td>
+                    <td>{p.phone}</td>
                     <td>{p.city}</td>
                     <td>{p.score}</td>
                     <td>
@@ -303,27 +310,6 @@ export function CycleWorkspace({ id }: { id: string }) {
                           }
                         >
                           Preview
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={async () => {
-                            if (
-                              !confirm(
-                                "Reset this claim code? The previous code will stop working immediately.",
-                              )
-                            )
-                              return;
-                            const r = await adminFetch<any>(
-                              `/admin/candidates/${p.id}/reset-claim-code`,
-                              { method: "POST" },
-                            );
-                            setCredential({
-                              participantId: p.participantId,
-                              claimCode: r.data.claimCode,
-                            });
-                          }}
-                        >
-                          Reset code
                         </button>
                       </div>
                     </td>
@@ -351,15 +337,16 @@ export function CycleWorkspace({ id }: { id: string }) {
                   and administration only.
                 </p>
                 <p>
-                  Participant ID and the one-time private claim code secure the
-                  download. A mobile number is intentionally not collected or
-                  printed.
+                  The candidate&rsquo;s mobile number secures the download
+                  and is never printed on the certificate or in the
+                  magazine.
                 </p>
               </div>
               {(
                 [
                   "participantId",
                   "certificateNumber",
+                  "phone",
                   "nameHindi",
                   "nameEnglish",
                   "guardianName",
@@ -373,6 +360,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                     {
                       participantId: "Unique participant/reference ID",
                       certificateNumber: "Internal certificate number",
+                      phone: "Mobile number (used to access the certificate)",
                       nameHindi: "Candidate name on certificate (Hindi)",
                       nameEnglish: "Candidate name (English/admin)",
                       guardianName: "Parent/guardian name on certificate",
@@ -380,6 +368,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                       city: "City/district (magazine only)",
                     }[k]
                   }
+                  type={k === "phone" ? "tel" : undefined}
                   {...form.register(k)}
                   error={form.formState.errors[k]?.message}
                 />
@@ -426,47 +415,10 @@ export function CycleWorkspace({ id }: { id: string }) {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={add.isPending}>
-                  Create & generate code
+                  Add candidate
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-      {credential && (
-        <div className="modal-backdrop">
-          <div className="modal" role="alertdialog">
-            <h2>Save this claim code now</h2>
-            <p>
-              It is shown once and cannot be retrieved later. Distribute it
-              privately; never print it in the magazine.
-            </p>
-            <p>
-              <strong>Reference ID</strong>
-            </p>
-            <div className="code-box">{credential.participantId}</div>
-            <p>
-              <strong>Private claim code</strong>
-            </p>
-            <div className="code-box">{credential.claimCode}</div>
-            <div
-              className="actions"
-              style={{ marginTop: 20, justifyContent: "flex-end" }}
-            >
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  navigator.clipboard.writeText(
-                    `${credential.participantId}\n${credential.claimCode}`,
-                  )
-                }
-              >
-                Copy
-              </Button>
-              <Button onClick={() => setCredential(null)}>
-                I have saved it
-              </Button>
-            </div>
           </div>
         </div>
       )}
@@ -507,15 +459,4 @@ function split(line: string) {
   }
   out.push(value.trim());
   return out;
-}
-function downloadCredentials(rows: any[]) {
-  const csv =
-      "participantId,claimCode\n" +
-      rows.map((r) => `\"${r.participantId}\",\"${r.claimCode}\"`).join("\n"),
-    url = URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
-    a = document.createElement("a");
-  a.href = url;
-  a.download = "private-claim-credentials.csv";
-  a.click();
-  URL.revokeObjectURL(url);
 }

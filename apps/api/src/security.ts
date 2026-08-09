@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, HttpException, HttpStatus, Inject, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { jwtVerify } from 'jose';
 import type { Request } from 'express';
 import type { AdminRole } from '@pathey/types';
 import { Store } from './store.js';
@@ -10,6 +10,10 @@ export const ROLES = 'roles';
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 export const Roles = (...roles: AdminRole[]) => SetMetadata(ROLES, roles);
 export type AdminRequest = Request & { admin: { id: string; role: AdminRole } };
+export const adminSecret = () =>
+  new TextEncoder().encode(
+    process.env.ADMIN_JWT_SECRET ?? 'development-only-admin-jwt-secret-32ch',
+  );
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -24,10 +28,9 @@ export class AdminGuard implements CanActivate {
     if (this.store.demo && req.header('x-demo-admin')) userId = req.header('x-demo-admin')!;
     else {
       const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
-      if (!token || !process.env.SUPABASE_JWT_ISSUER) throw new UnauthorizedException('Administrator session required');
+      if (!token) throw new UnauthorizedException('Administrator session required');
       try {
-        const issuer = process.env.SUPABASE_JWT_ISSUER.replace(/\/$/, '');
-        const { payload } = await jwtVerify(token, createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), { issuer });
+        const { payload } = await jwtVerify(token, adminSecret());
         userId = payload.sub!;
       } catch { throw new UnauthorizedException('Administrator session expired'); }
     }

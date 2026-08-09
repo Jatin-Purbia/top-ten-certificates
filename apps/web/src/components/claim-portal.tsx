@@ -89,7 +89,7 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
   });
   const form = useForm<Form>({
     resolver: zodResolver(formSchema),
-    defaultValues: { participantId: "", claimCode: "" },
+    defaultValues: { phone: "" },
   });
 
   const chooseCycle = (nextSlug: string) => {
@@ -241,17 +241,16 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
             </div>
             <div className="lang-copy">
               <p lang="hi">
-                अपना प्रतिभागी संदर्भ क्रमांक और कार्यालय द्वारा निजी रूप से दिया
-                गया क्लेम कोड दर्ज करें।
+                अपना मोबाइल नंबर दर्ज करें जो प्रकाशन कार्यालय के पास दर्ज है।
               </p>
               <p>
-                Enter the participant reference ID and private claim code provided
-                by the publication office.
+                Enter the mobile number registered with the publication
+                office.
               </p>
             </div>
             <p className="secure-note">
-              <LockKeyhole size={17} aria-hidden /> Your credentials are checked
-              securely and never shown publicly.
+              <LockKeyhole size={17} aria-hidden /> Your mobile number is
+              checked securely and never shown publicly.
             </p>
           </aside>
           <section className="claim-form">
@@ -281,25 +280,20 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
               </>
             ) : (
               <>
-                <h2>Enter your certificate credentials</h2>
+                <h2>Enter your mobile number</h2>
                 <p className="form-intro">
-                  No account or mobile number is needed. Enter the two unique
-                  credentials privately supplied by the publication office. They
-                  ensure that only your matching personalised certificate opens.
+                  No account is needed. Enter the 10-digit mobile number
+                  registered with the publication office to view and download
+                  your personalised certificate.
                 </p>
                 <form onSubmit={form.handleSubmit(submit)} noValidate>
                   <Field
-                    label="Participant / Reference ID"
-                    autoComplete="username"
-                    {...form.register("participantId")}
-                    error={form.formState.errors.participantId?.message}
-                  />
-                  <Field
-                    label="Private certificate claim code"
-                    type="password"
-                    autoComplete="one-time-code"
-                    {...form.register("claimCode")}
-                    error={form.formState.errors.claimCode?.message}
+                    label="Mobile number"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    {...form.register("phone")}
+                    error={form.formState.errors.phone?.message}
                   />
                   {form.formState.errors.root && (
                     <div className="notice notice-danger" role="alert">
@@ -318,9 +312,8 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
                       : "Generate my certificate"}
                   </Button>
                   <p className="credential-help">
-                    Both values are printed on the private claim information
-                    supplied to the candidate; neither value appears in the
-                    magazine.
+                    Use the same mobile number that was provided during
+                    registration; it is not printed in the magazine.
                   </p>
                 </form>
               </>

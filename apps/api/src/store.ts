@@ -1,7 +1,9 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { hash, verify } from "argon2";
+import { MongoClient, type Db, type Document } from "mongodb";
+import { verify } from "argon2";
 import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { nanoid } from "nanoid";
 import type {
   AdminRole,
@@ -13,7 +15,6 @@ import type {
 import {
   calculateDisplayEnd,
   calculateExpiry,
-  claimCode,
   sha256,
 } from "./domain.js";
 
@@ -45,7 +46,15 @@ export type Cleanup = {
   completedAt: string | null;
   errorCode: string | null;
 };
-type InternalCandidate = Candidate & { claimHash: string };
+export type AdminProfile = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: AdminRole;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 type Session = {
   id: string;
   candidateId: string;
@@ -55,27 +64,18 @@ type Session = {
 };
 
 const iso = () => new Date().toISOString();
-const camel = (row: any): any =>
-  Object.fromEntries(
-    Object.entries(row).map(([k, v]) => [
-      k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()),
-      v,
-    ]),
-  );
-const snake = (row: Record<string, any>) =>
-  Object.fromEntries(
-    Object.entries(row).map(([k, v]) => [
-      k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`),
-      v,
-    ]),
-  );
+const withId = <T extends { id: string }>(item: T) => ({ ...item, _id: item.id });
+const noId = { projection: { _id: 0 } } as const;
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const photoDir = () => process.env.CANDIDATE_PHOTO_DIR ?? "./storage/candidate-photos";
 
 @Injectable()
 export class Store implements OnModuleInit {
 
-  private supabase?: SupabaseClient;
+  private mongo?: MongoClient;
+  private db?: Db;
   private cycles: ResultCycle[] = [];
-  private candidates: InternalCandidate[] = [];
+  private candidates: Candidate[] = [];
   private sessions: Session[] = [];
   private templates: Template[] = [];
   private audits: Audit[] = [];
@@ -87,27 +87,41 @@ export class Store implements OnModuleInit {
   };
   readonly demo = process.env.NODE_ENV !== "production" && process.env.DEMO_MODE !== "false";
 
-  private hashClaimCode(code: string) {
-    return hash(code, {
-      type: 2,
-      ...(this.demo
-        ? { memoryCost: 4096, timeCost: 1, parallelism: 1 }
-        : {}),
-    });
+  private col<T extends Document = Document>(name: string) {
+    return this.db!.collection<T & { _id: string }>(name);
   }
 
   async onModuleInit() {
     if (!this.demo) {
-      if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
-        throw new Error("Supabase configuration is required outside demo mode");
-      this.supabase = createClient(
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
-        { auth: { persistSession: false, autoRefreshToken: false } },
-      );
+      if (!process.env.MONGODB_URI)
+        throw new Error("MongoDB configuration is required outside demo mode");
+      this.mongo = new MongoClient(process.env.MONGODB_URI);
+      await this.mongo.connect();
+      this.db = this.mongo.db();
+      await this.ensureIndexes();
       return;
     }
     await this.seedDemo();
+  }
+
+  private async ensureIndexes() {
+    const db = this.db!;
+    await Promise.all([
+      db.collection("result_cycles").createIndex({ publicSlug: 1 }, { unique: true }),
+      db.collection("result_cycles").createIndex({ status: 1, expiresAt: 1 }),
+      db.collection("candidates").createIndex({ cycleId: 1 }),
+      db.collection("candidates").createIndex({ cycleId: 1, participantId: 1 }, { unique: true }),
+      db.collection("candidates").createIndex({ cycleId: 1, rank: 1 }, { unique: true }),
+      db.collection("candidates").createIndex({ cycleId: 1, certificateNumber: 1 }, { unique: true }),
+      db.collection("candidates").createIndex({ cycleId: 1, phone: 1 }, { unique: true }),
+      db.collection("candidates").createIndex({ publicCertificateId: 1 }, { unique: true }),
+      db.collection("claim_sessions").createIndex({ tokenHash: 1 }, { unique: true }),
+      db.collection("claim_sessions").createIndex({ candidateId: 1 }),
+      db.collection("certificate_download_events").createIndex({ candidateId: 1 }),
+      db.collection("audit_logs").createIndex({ createdAt: -1 }),
+      db.collection("cleanup_runs").createIndex({ startedAt: -1 }),
+      db.collection("admin_profiles").createIndex({ email: 1 }, { unique: true }),
+    ]);
   }
 
   private async seedDemo() {
@@ -184,6 +198,7 @@ export class Store implements OnModuleInit {
       await this.createCandidate(published.id, {
         participantId: `DEMO-${String(i + 1).padStart(3, "0")}`,
         certificateNumber: `PK101-${String(i + 1).padStart(3, "0")}`,
+        phone: `9${String(100000000 + i).padStart(9, "0")}`,
         nameHindi: `${firstNames[i]} कुमार`,
         nameEnglish: english[i]!,
         guardianName: "Demo Guardian",
@@ -197,14 +212,6 @@ export class Store implements OnModuleInit {
       });
   }
 
-  private async rows(table: string, query?: (q: any) => any) {
-    const q = query
-      ? query(this.supabase!.from(table).select("*"))
-      : this.supabase!.from(table).select("*");
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data ?? []).map(camel);
-  }
   async roleFor(userId: string): Promise<AdminRole | null> {
     if (this.demo)
       return userId === "demo-viewer"
@@ -212,24 +219,41 @@ export class Store implements OnModuleInit {
         : userId === "demo-certificate-admin"
           ? "certificate_admin"
           : "super_admin";
-    const { data } = await this.supabase!.from("admin_profiles")
-      .select("role")
-      .eq("id", userId)
-      .eq("active", true)
-      .maybeSingle();
-    return (data?.role as AdminRole) ?? null;
+    const admin = await this.col("admin_profiles").findOne(
+      { _id: userId, active: true } as any,
+      { projection: { role: 1 } },
+    );
+    return (admin?.role as AdminRole) ?? null;
+  }
+  async verifyAdminPassword(email: string, password: string) {
+    if (this.demo) return undefined;
+    const admin = await this.col("admin_profiles").findOne({
+      email: email.toLowerCase(),
+      active: true,
+    } as any);
+    if (!admin) return undefined;
+    const ok = await verify(admin.passwordHash as string, password).catch(() => false);
+    if (!ok) return undefined;
+    return {
+      id: admin._id as string,
+      email: admin.email as string,
+      displayName: admin.displayName as string,
+      role: admin.role as AdminRole,
+    };
   }
   async listCycles(search = "", status = ""): Promise<ResultCycle[]> {
-    if (!this.demo)
-      return this.rows("result_cycles", (q) => {
-        let x = q.order("publication_at", { ascending: false });
-        if (search)
-          x = x.or(
-            `title.ilike.%${search.replace(/[%_,]/g, "")}%,result_number.ilike.%${search.replace(/[%_,]/g, "")}%`,
-          );
-        if (status) x = x.eq("status", status);
-        return x;
-      });
+    if (!this.demo) {
+      const filter: Record<string, unknown> = {};
+      if (status) filter.status = status;
+      if (search) {
+        const rx = new RegExp(escapeRegex(search), "i");
+        filter.$or = [{ title: rx }, { resultNumber: rx }];
+      }
+      return this.col("result_cycles")
+        .find(filter, noId)
+        .sort({ publicationAt: -1 })
+        .toArray() as unknown as Promise<ResultCycle[]>;
+    }
     return this.cycles
       .filter(
         (c) =>
@@ -243,19 +267,15 @@ export class Store implements OnModuleInit {
   }
   async getCycle(id: string) {
     if (!this.demo) {
-      const r = await this.rows("result_cycles", (q) =>
-        q.eq("id", id).limit(1),
-      );
-      return r[0] as ResultCycle | undefined;
+      const doc = await this.col("result_cycles").findOne({ _id: id } as any, noId);
+      return (doc as unknown as ResultCycle) ?? undefined;
     }
     return this.cycles.find((c) => c.id === id);
   }
   async getCycleBySlug(slug: string) {
     if (!this.demo) {
-      const r = await this.rows("result_cycles", (q) =>
-        q.eq("public_slug", slug).limit(1),
-      );
-      return r[0] as ResultCycle | undefined;
+      const doc = await this.col("result_cycles").findOne({ publicSlug: slug }, noId);
+      return (doc as unknown as ResultCycle) ?? undefined;
     }
     return this.cycles.find((c) => c.publicSlug === slug);
   }
@@ -286,12 +306,8 @@ export class Store implements OnModuleInit {
       purgedAt: null,
     };
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("result_cycles")
-        .insert({ ...snake(item), created_by: actorId })
-        .select()
-        .single();
-      if (error) throw error;
-      return camel(data) as ResultCycle;
+      await this.col("result_cycles").insertOne({ ...withId(item), createdBy: actorId });
+      return item;
     }
     this.cycles.push(item);
     await this.audit(actorId, "cycle.created", "result_cycle", item.id, {});
@@ -327,13 +343,13 @@ export class Store implements OnModuleInit {
     }
     safe.updatedAt = iso();
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("result_cycles")
-        .update(snake(safe))
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return camel(data) as ResultCycle;
+      const updated = await this.col("result_cycles").findOneAndUpdate(
+        { _id: id } as any,
+        { $set: safe },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
+      if (!updated) throw new Error("CYCLE_NOT_FOUND");
+      return updated as unknown as ResultCycle;
     }
     Object.assign(cycle, safe);
     await this.audit(actorId, "cycle.updated", "result_cycle", id, {
@@ -358,15 +374,14 @@ export class Store implements OnModuleInit {
         updatedAt: now,
       } as const;
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("result_cycles")
-        .update(snake(patch))
-        .eq("id", id)
-        .in("status", ["draft", "scheduled"])
-        .select()
-        .single();
-      if (error) throw error;
+      const updated = await this.col("result_cycles").findOneAndUpdate(
+        { _id: id, status: { $in: ["draft", "scheduled"] } } as any,
+        { $set: patch },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
+      if (!updated) throw new Error("CYCLE_STATUS_CHANGED");
       await this.audit(actorId, "cycle.published", "result_cycle", id, {});
-      return camel(data) as ResultCycle;
+      return updated as unknown as ResultCycle;
     }
     Object.assign(cycle, patch);
     await this.audit(actorId, "cycle.published", "result_cycle", id, {});
@@ -385,14 +400,14 @@ export class Store implements OnModuleInit {
     if (cycle.status === "purged") throw new Error("PURGED_CYCLE");
     const patch = { status, updatedAt: iso() };
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("result_cycles")
-        .update(snake(patch))
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
+      const updated = await this.col("result_cycles").findOneAndUpdate(
+        { _id: id } as any,
+        { $set: patch },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
+      if (!updated) throw new Error("CYCLE_NOT_FOUND");
       await this.audit(actorId, `cycle.${status}`, "result_cycle", id, {});
-      return camel(data) as ResultCycle;
+      return updated as unknown as ResultCycle;
     }
     Object.assign(cycle, patch);
     await this.audit(actorId, `cycle.${status}`, "result_cycle", id, {});
@@ -403,71 +418,50 @@ export class Store implements OnModuleInit {
     const c = await this.patchCycle(id, { publicSlug: slug } as any, actorId);
     if (this.demo && c) c.publicSlug = slug;
     else if (!this.demo) {
-      await this.supabase!.from("result_cycles")
-        .update({ public_slug: slug })
-        .eq("id", id);
+      await this.col("result_cycles").updateOne(
+        { _id: id } as any,
+        { $set: { publicSlug: slug } },
+      );
     }
     await this.audit(actorId, "cycle.slug_regenerated", "result_cycle", id, {});
     return this.getCycle(id);
   }
   async listCandidates(cycleId: string): Promise<Candidate[]> {
-    if (!this.demo) {
-      return (
-        await this.rows("candidates", (q) =>
-          q.eq("cycle_id", cycleId).order("rank"),
-        )
-      ).map(({ claimHash, ...c }: any) => c);
-    }
+    if (!this.demo)
+      return this.col("candidates")
+        .find({ cycleId }, noId)
+        .sort({ rank: 1 })
+        .toArray() as unknown as Promise<Candidate[]>;
     return this.candidates
       .filter((c) => c.cycleId === cycleId)
-      .sort((a, b) => a.rank - b.rank)
-      .map(({ claimHash, ...c }) => c);
+      .sort((a, b) => a.rank - b.rank);
   }
-  async internalCandidate(cycleId: string, participantId: string) {
+  async candidateByPhone(cycleId: string, phone: string) {
     if (!this.demo) {
-      const { data } = await this.supabase!.from("candidates")
-        .select("*, candidate_claim_credentials(hash)")
-        .eq("cycle_id", cycleId)
-        .eq("participant_id", participantId)
-        .maybeSingle();
-      if (!data) return;
-      const c = camel(data);
-      c.claimHash = data.candidate_claim_credentials?.hash;
-      delete c.candidateClaimCredentials;
-      return c as InternalCandidate;
+      const doc = await this.col("candidates").findOne({ cycleId, phone }, noId);
+      return (doc as unknown as Candidate) ?? undefined;
     }
     return this.candidates.find(
-      (c) =>
-        c.cycleId === cycleId &&
-        c.participantId.toLowerCase() === participantId.toLowerCase(),
+      (c) => c.cycleId === cycleId && c.phone === phone,
     );
   }
   async candidateById(id: string) {
     if (!this.demo) {
-      const r = await this.rows("candidates", (q) => q.eq("id", id).limit(1));
-      return r[0] as Candidate | undefined;
+      const doc = await this.col("candidates").findOne({ _id: id } as any, noId);
+      return (doc as unknown as Candidate) ?? undefined;
     }
-    const c = this.candidates.find((x) => x.id === id);
-    if (!c) return;
-    const { claimHash, ...safe } = c;
-    return safe;
+    return this.candidates.find((x) => x.id === id);
   }
   async candidateByPublicId(id: string) {
     if (!this.demo) {
-      const r = await this.rows("candidates", (q) =>
-        q.eq("public_certificate_id", id).limit(1),
-      );
-      return r[0] as Candidate | undefined;
+      const doc = await this.col("candidates").findOne({ publicCertificateId: id }, noId);
+      return (doc as unknown as Candidate) ?? undefined;
     }
-    const c = this.candidates.find((x) => x.publicCertificateId === id);
-    if (!c) return;
-    const { claimHash, ...safe } = c;
-    return safe;
+    return this.candidates.find((x) => x.publicCertificateId === id);
   }
   async createCandidate(cycleId: string, input: CandidateInput) {
-    const code = claimCode(),
-      now = iso();
-    const item: InternalCandidate = {
+    const now = iso();
+    const item: Candidate = {
       ...input,
       photoPath: input.photoPath ?? null,
       id: randomUUID(),
@@ -478,24 +472,17 @@ export class Store implements OnModuleInit {
       lastDownloadedAt: null,
       createdAt: now,
       updatedAt: now,
-      claimHash: await this.hashClaimCode(code),
     };
     if (!this.demo) {
-      const { claimHash, ...candidate } = item;
-      const { error } = await this.supabase!.from("candidates").insert(
-        snake(candidate),
-      );
-      if (error) throw error;
-      const { error: credError } = await this.supabase!.from(
-        "candidate_claim_credentials",
-      ).insert({ candidate_id: item.id, hash: claimHash });
-      if (credError) throw credError;
+      await this.col("candidates").insertOne(withId(item));
     } else {
       if (
         this.candidates.some(
           (c) =>
             c.cycleId === cycleId &&
-            (c.rank === item.rank || c.participantId === item.participantId),
+            (c.rank === item.rank ||
+              c.participantId === item.participantId ||
+              c.phone === item.phone),
         )
       )
         throw new Error("DUPLICATE_CANDIDATE");
@@ -503,14 +490,14 @@ export class Store implements OnModuleInit {
       const cycle = await this.getCycle(cycleId);
       if (cycle) cycle.candidateCount++;
     }
-    const { claimHash, ...candidate } = item;
-    return { candidate, claimCode: code };
+    return { candidate: item };
   }
   async importCandidates(cycleId: string, inputs: CandidateInput[]) {
     const existing = await this.listCandidates(cycleId);
     const all = [
       ...existing.map((c) => ({
         participantId: c.participantId,
+        phone: c.phone,
         rank: c.rank,
       })),
       ...inputs,
@@ -521,7 +508,9 @@ export class Store implements OnModuleInit {
       new Set(all.map((x) => x.participantId.toLowerCase())).size !== all.length
     )
       throw new Error("DUPLICATE_PARTICIPANT_ID");
-    const generated = [];
+    if (new Set(all.map((x) => x.phone)).size !== all.length)
+      throw new Error("DUPLICATE_PHONE");
+    const generated: { candidate: Candidate }[] = [];
     if (this.demo) {
       const snapshot = this.candidates.slice();
       try {
@@ -533,32 +522,39 @@ export class Store implements OnModuleInit {
       }
       return generated;
     }
-    const payload = [];
-    for (const input of inputs) {
-      const code = claimCode(),
-        now = iso(),
-        candidate: InternalCandidate = {
-          ...input,
-          photoPath: input.photoPath ?? null,
-          id: randomUUID(),
-          cycleId,
-          publicCertificateId: randomUUID(),
-          downloadCount: 0,
-          firstDownloadedAt: null,
-          lastDownloadedAt: null,
-          createdAt: now,
-          updatedAt: now,
-          claimHash: await this.hashClaimCode(code),
-        };
-      payload.push({ ...snake(candidate), claim_hash: candidate.claimHash });
-      const { claimHash, ...safe } = candidate;
-      generated.push({ candidate: safe, claimCode: code });
+    const now = iso();
+    const docs = inputs.map((input) => {
+      const candidate: Candidate = {
+        ...input,
+        photoPath: input.photoPath ?? null,
+        id: randomUUID(),
+        cycleId,
+        publicCertificateId: randomUUID(),
+        downloadCount: 0,
+        firstDownloadedAt: null,
+        lastDownloadedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      generated.push({ candidate });
+      return candidate;
+    });
+    const session = this.mongo!.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const cycle = await this.col("result_cycles").findOne(
+          { _id: cycleId, status: { $in: ["draft", "scheduled"] } } as any,
+          { session },
+        );
+        if (!cycle) throw new Error("Cycle is not editable");
+        await this.col("candidates").insertMany(docs.map(withId), {
+          session,
+          ordered: true,
+        });
+      });
+    } finally {
+      await session.endSession();
     }
-    const { error } = await this.supabase!.rpc(
-      "import_candidates_transactional",
-      { target_cycle_id: cycleId, payload },
-    );
-    if (error) throw error;
     return generated;
   }
   async updateCandidate(
@@ -571,24 +567,22 @@ export class Store implements OnModuleInit {
     const cycle = await this.getCycle(existing.cycleId);
     if (cycle?.status === "purged") throw new Error("PURGED_CYCLE");
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("candidates")
-        .update(snake({ ...patch, updatedAt: iso() }))
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
+      const updated = await this.col("candidates").findOneAndUpdate(
+        { _id: id } as any,
+        { $set: { ...patch, updatedAt: iso() } },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
       await this.audit(actorId, "candidate.updated", "candidate", id, {
         fields: Object.keys(patch),
       });
-      return camel(data) as Candidate;
+      return updated as unknown as Candidate;
     }
     const target = this.candidates.find((c) => c.id === id)!;
     Object.assign(target, patch, { updatedAt: iso() });
     await this.audit(actorId, "candidate.updated", "candidate", id, {
       fields: Object.keys(patch),
     });
-    const { claimHash, ...safe } = target;
-    return safe;
+    return target;
   }
   async deleteCandidate(id: string, actorId: string) {
     const c = await this.candidateById(id);
@@ -597,10 +591,7 @@ export class Store implements OnModuleInit {
     if (cycle?.status !== "draft")
       throw new Error("PUBLISHED_CANDIDATE_DELETE");
     if (!this.demo) {
-      const { error } = await this.supabase!.from("candidates")
-        .delete()
-        .eq("id", id);
-      if (error) throw error;
+      await this.col("candidates").deleteOne({ _id: id } as any);
     } else {
       this.candidates = this.candidates.filter((x) => x.id !== id);
       if (cycle) cycle.candidateCount--;
@@ -608,32 +599,8 @@ export class Store implements OnModuleInit {
     await this.audit(actorId, "candidate.deleted", "candidate", id, {});
     return true;
   }
-  async resetCode(id: string, actorId: string) {
-    const code = claimCode(),
-      claimHash = await hash(code, { type: 2 });
-    if (!this.demo) {
-      const { error } = await this.supabase!.from("candidate_claim_credentials")
-        .update({ hash: claimHash, reset_at: iso() })
-        .eq("candidate_id", id);
-      if (error) throw error;
-    } else {
-      const c = this.candidates.find((x) => x.id === id);
-      if (!c) return;
-      c.claimHash = claimHash;
-    }
-    await this.audit(
-      actorId,
-      "candidate.claim_code_reset",
-      "candidate",
-      id,
-      {},
-    );
-    return code;
-  }
-  async verifyClaim(cycleId: string, participantId: string, code: string) {
-    const candidate = await this.internalCandidate(cycleId, participantId);
-    if (!candidate || !candidate.claimHash) return;
-    return (await verify(candidate.claimHash, code)) ? candidate : undefined;
+  async verifyClaim(cycleId: string, phone: string) {
+    return this.candidateByPhone(cycleId, phone);
   }
   async createSession(
     candidateId: string,
@@ -647,24 +614,17 @@ export class Store implements OnModuleInit {
       expiresAt,
       revokedAt: null,
     };
-    if (!this.demo) {
-      const { error } = await this.supabase!.from("claim_sessions").insert(
-        snake(session),
-      );
-      if (error) throw error;
-    } else this.sessions.push(session);
+    if (!this.demo) await this.col("claim_sessions").insertOne(withId(session));
+    else this.sessions.push(session);
     return session;
   }
   async sessionCandidate(rawToken: string) {
     const tokenHash = sha256(rawToken);
     if (!this.demo) {
-      const { data } = await this.supabase!.from("claim_sessions")
-        .select("candidate_id,expires_at,revoked_at")
-        .eq("token_hash", tokenHash)
-        .maybeSingle();
-      if (!data || data.revoked_at || new Date(data.expires_at) <= new Date())
+      const doc = await this.col("claim_sessions").findOne({ tokenHash });
+      if (!doc || doc.revokedAt || new Date(doc.expiresAt as string) <= new Date())
         return;
-      return this.candidateById(data.candidate_id);
+      return this.candidateById(doc.candidateId as string);
     }
     const s = this.sessions.find(
       (x) =>
@@ -677,13 +637,21 @@ export class Store implements OnModuleInit {
   async recordDownload(id: string, fingerprint: string) {
     const now = iso();
     if (!this.demo) {
-      await this.supabase!.from("certificate_download_events").insert({
-        candidate_id: id,
-        request_fingerprint: fingerprint,
+      await this.col("certificate_download_events").insertOne({
+        _id: randomUUID(),
+        candidateId: id,
+        downloadedAt: now,
+        requestFingerprint: fingerprint,
       });
-      await this.supabase!.rpc("increment_candidate_download", {
-        candidate_uuid: id,
-      });
+      await this.col("candidates").updateOne({ _id: id } as any, [
+        {
+          $set: {
+            downloadCount: { $add: [{ $ifNull: ["$downloadCount", 0] }, 1] },
+            firstDownloadedAt: { $ifNull: ["$firstDownloadedAt", now] },
+            lastDownloadedAt: now,
+          },
+        },
+      ] as any);
     } else {
       const c = this.candidates.find((x) => x.id === id);
       if (c) {
@@ -696,7 +664,9 @@ export class Store implements OnModuleInit {
     }
   }
   async listTemplates(): Promise<Template[]> {
-    return this.demo ? this.templates : this.rows("certificate_templates");
+    return this.demo
+      ? this.templates
+      : (this.col("certificate_templates").find({}, noId).toArray() as unknown as Promise<Template[]>);
   }
   async createTemplate(input: Partial<Template>, actorId: string) {
     const now = iso(),
@@ -711,25 +681,23 @@ export class Store implements OnModuleInit {
         updatedAt: now,
       };
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("certificate_templates")
-        .insert({ ...snake(item), created_by: actorId })
-        .select()
-        .single();
-      if (error) throw error;
-      return camel(data);
+      await this.col("certificate_templates").insertOne({
+        ...withId(item),
+        createdBy: actorId,
+      });
+      return item;
     }
     this.templates.push(item);
     return item;
   }
   async updateTemplate(id: string, patch: Partial<Template>) {
     if (!this.demo) {
-      const { data, error } = await this.supabase!.from("certificate_templates")
-        .update(snake({ ...patch, updatedAt: iso() }))
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return camel(data);
+      const updated = await this.col("certificate_templates").findOneAndUpdate(
+        { _id: id } as any,
+        { $set: { ...patch, updatedAt: iso() } },
+        { returnDocument: "after", projection: { _id: 0 } },
+      );
+      return updated as unknown as Template;
     }
     const t = this.templates.find((x) => x.id === id);
     if (t) Object.assign(t, patch, { updatedAt: iso() });
@@ -737,14 +705,12 @@ export class Store implements OnModuleInit {
   }
   async getSettings() {
     if (!this.demo) {
-      const { data } = await this.supabase!.from("app_settings")
-        .select("*")
-        .eq("key", "certificate_availability")
-        .single();
+      const doc = await this.col("app_settings").findOne({ _id: "certificate_availability" } as any);
+      if (!doc) throw new Error("SETTINGS_NOT_SEEDED");
       return {
-        days: Number(data.value.days),
-        changedBy: data.changed_by,
-        changedAt: data.updated_at,
+        days: Number((doc.value as any).days),
+        changedBy: doc.changedBy as string,
+        changedAt: doc.updatedAt as string,
       };
     }
     return this.availability;
@@ -752,14 +718,17 @@ export class Store implements OnModuleInit {
   async setSettings(days: number, actorId: string) {
     this.availability = { days, changedBy: actorId, changedAt: iso() };
     if (!this.demo) {
-      const { error } = await this.supabase!.from("app_settings")
-        .update({
-          value: { days },
-          changed_by: actorId,
-          updated_at: this.availability.changedAt,
-        })
-        .eq("key", "certificate_availability");
-      if (error) throw error;
+      await this.col("app_settings").updateOne(
+        { _id: "certificate_availability" } as any,
+        {
+          $set: {
+            value: { days },
+            changedBy: actorId,
+            updatedAt: this.availability.changedAt,
+          },
+        },
+        { upsert: true },
+      );
     }
     await this.audit(
       actorId,
@@ -788,14 +757,16 @@ export class Store implements OnModuleInit {
     const affected = await this.activeCyclePreview(days);
     for (const a of affected) {
       if (!this.demo)
-        await this.supabase!.from("result_cycles")
-          .update({
-            expires_at: a.newExpiresAt,
-            download_window_days: days,
-            updated_at: iso(),
-          })
-          .eq("id", a.id)
-          .eq("status", "published");
+        await this.col("result_cycles").updateOne(
+          { _id: a.id, status: "published" } as any,
+          {
+            $set: {
+              expiresAt: a.newExpiresAt,
+              downloadWindowDays: days,
+              updatedAt: iso(),
+            },
+          },
+        );
       else {
         const c = await this.getCycle(a.id);
         if (c) {
@@ -830,22 +801,26 @@ export class Store implements OnModuleInit {
       metadata,
       createdAt: iso(),
     };
-    if (!this.demo) await this.supabase!.from("audit_logs").insert(snake(item));
+    if (!this.demo) await this.col("audit_logs").insertOne(withId(item));
     else this.audits.unshift(item);
   }
   async listAudits() {
     return this.demo
       ? this.audits.slice(0, 100)
-      : this.rows("audit_logs", (q) =>
-          q.order("created_at", { ascending: false }).limit(100),
-        );
+      : (this.col("audit_logs")
+          .find({}, noId)
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .toArray() as unknown as Promise<Audit[]>);
   }
   async listCleanups() {
     return this.demo
       ? this.cleanups
-      : this.rows("cleanup_runs", (q) =>
-          q.order("started_at", { ascending: false }).limit(100),
-        );
+      : (this.col("cleanup_runs")
+          .find({}, noId)
+          .sort({ startedAt: -1 })
+          .limit(100)
+          .toArray() as unknown as Promise<Cleanup[]>);
   }
   async dashboard() {
     const cycles = await this.listCycles(),
@@ -889,29 +864,63 @@ export class Store implements OnModuleInit {
         errorCode: null,
       };
       if (this.demo) this.cleanups.unshift(run);
-      else await this.supabase!.from("cleanup_runs").insert(snake(run));
+      else await this.col("cleanup_runs").insertOne(withId(run));
       try {
         if (!this.demo) {
-          const { data: photos, error: photoQueryError } =
-            await this.supabase!.from("candidates")
-              .select("photo_path")
-              .eq("cycle_id", cycle.id)
-              .not("photo_path", "is", null);
-          if (photoQueryError) throw photoQueryError;
-          const paths = (photos ?? []).map((x) => x.photo_path).filter(Boolean);
-          if (paths.length) {
-            const { error: storageError } =
-              await this.supabase!.storage.from("candidate-private").remove(
-                paths,
-              );
-            if (storageError) throw storageError;
-          }
-          const { data, error } = await this.supabase!.rpc(
-            "purge_expired_cycle",
-            { target_cycle_id: cycle.id },
+          const photoDocs = await this.col("candidates")
+            .find(
+              { cycleId: cycle.id, photoPath: { $ne: null } },
+              { projection: { photoPath: 1 } },
+            )
+            .toArray();
+          const paths = photoDocs
+            .map((x) => x.photoPath as string | null)
+            .filter((p): p is string => Boolean(p));
+          await Promise.all(
+            paths.map((p) => rm(join(photoDir(), p), { force: true }).catch(() => {})),
           );
-          if (error) throw error;
-          run.deletedRecords = Number(data ?? 0);
+          const session = this.mongo!.startSession();
+          let deleted = 0;
+          try {
+            await session.withTransaction(async () => {
+              const nowIso = new Date().toISOString();
+              const eligible = await this.col("result_cycles").findOne(
+                { _id: cycle.id, status: { $ne: "purged" }, expiresAt: { $lte: nowIso } } as any,
+                { session },
+              );
+              if (!eligible) {
+                deleted = 0;
+                return;
+              }
+              const candidateDocs = await this.col("candidates")
+                .find({ cycleId: cycle.id }, { session, projection: { _id: 1 } })
+                .toArray();
+              const ids = candidateDocs.map((d) => d._id as string);
+              if (ids.length) {
+                await this.col("claim_sessions").deleteMany(
+                  { candidateId: { $in: ids } },
+                  { session },
+                );
+                await this.col("certificate_download_events").deleteMany(
+                  { candidateId: { $in: ids } },
+                  { session },
+                );
+                await this.col("candidates").deleteMany(
+                  { cycleId: cycle.id },
+                  { session },
+                );
+              }
+              deleted = ids.length;
+              await this.col("result_cycles").updateOne(
+                { _id: cycle.id } as any,
+                { $set: { status: "purged", purgedAt: iso(), updatedAt: iso() } },
+                { session },
+              );
+            });
+          } finally {
+            await session.endSession();
+          }
+          run.deletedRecords = deleted;
         } else {
           const before = this.candidates.length;
           const ids = this.candidates
@@ -938,9 +947,10 @@ export class Store implements OnModuleInit {
         results.push(run);
       }
       if (!this.demo)
-        await this.supabase!.from("cleanup_runs")
-          .update(snake(run))
-          .eq("id", run.id);
+        await this.col("cleanup_runs").updateOne(
+          { _id: run.id } as any,
+          { $set: run },
+        );
     }
     return results;
   }

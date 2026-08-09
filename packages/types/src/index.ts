@@ -15,8 +15,11 @@ export const cycleSchema = z.object({
 });
 export type ResultCycle = z.infer<typeof cycleSchema>;
 
+export const phoneSchema = z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number');
+
 export const candidateInputSchema = z.object({
   participantId: z.string().trim().min(3).max(64), certificateNumber: z.string().trim().min(3).max(64),
+  phone: phoneSchema,
   nameHindi: z.string().trim().min(1).max(120), nameEnglish: z.string().trim().min(1).max(120),
   guardianName: z.string().trim().min(1).max(120), className: z.string().trim().min(1).max(24),
   age: z.number().int().min(3).max(25), city: z.string().trim().min(1).max(100),
@@ -33,7 +36,7 @@ export const cycleInputSchema = z.object({
 });
 export type CycleInput = z.infer<typeof cycleInputSchema>;
 
-export const claimSchema = z.object({ participantId: z.string().trim().min(3).max(64), claimCode: z.string().min(8).max(128), cycleSlug: z.string().min(8).max(80) });
+export const claimSchema = z.object({ phone: phoneSchema, cycleSlug: z.string().min(8).max(80) });
 export type ClaimInput = z.infer<typeof claimSchema>;
 
 export type ApiError = { error: { code: string; message: string; requestId?: string; details?: unknown } };
