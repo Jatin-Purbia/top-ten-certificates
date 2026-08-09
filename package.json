@@ -11,7 +11,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test -w @pathey/api",
     "test:e2e": "playwright test",
-    "seed": "node mongo/seed/seed.mjs",
+    "seed": "node --env-file-if-exists=.env mongo/seed/seed.mjs",
     "format": "prettier --write .",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build"
   },

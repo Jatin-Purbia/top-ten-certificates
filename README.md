@@ -12,7 +12,7 @@ apps/api        NestJS API, Swagger, RBAC, PDF/QR/export and cleanup services
 packages/types  Shared Zod contracts and TypeScript types
 packages/ui     Accessible shared primitives
 packages/config Validated environment model
-mongo           MongoDB index setup and fictional seed data
+mongo           MongoDB index setup and initial administrator/template bootstrap
 docs            Architecture, request/deletion diagrams, security boundaries
 e2e             Playwright browser coverage
 ```
@@ -38,7 +38,7 @@ docker compose up mongo mongo-init -d
 npm run seed
 ```
 
-`npm run seed` requires `MONGODB_URI`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD` in `.env`. MongoDB multi-document transactions (used for atomic candidate import and cycle purge) require a replica set; `docker-compose.yml` runs a single-node replica set for local use, which is sufficient — a production deployment should use a proper multi-node replica set for durability. Place the supplied `certificate-demo.jpeg` where `CERTIFICATE_TEMPLATE_PATH` points (defaults to the repo root). The seed script creates the initial administrator from `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`, inserts fictional cycles and candidates, and prints their demo phone numbers. Do not run it against a live dataset.
+`npm run seed` requires `MONGODB_URI`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD` in `.env`. MongoDB multi-document transactions (used for atomic candidate import and cycle purge) require a replica set; `docker-compose.yml` runs a single-node replica set for local use, which is sufficient — a production deployment should use a proper multi-node replica set for durability (a managed replica set such as MongoDB Atlas already satisfies this). Place the supplied `certificate-demo.jpeg` where `CERTIFICATE_TEMPLATE_PATH` points (defaults to the repo root). The seed script only creates indexes, the initial administrator (from `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`), the approved certificate template record, and the default availability setting — it inserts no result cycles or candidates. It is safe to run against a real deployment and is idempotent (re-running it does not duplicate the admin or template).
 
 ## Environment variables
 
