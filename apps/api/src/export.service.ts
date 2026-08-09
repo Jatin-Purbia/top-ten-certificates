@@ -51,13 +51,63 @@ const collect = (doc: PDFKit.PDFDocument) =>
     doc.end();
   });
 
+type FitField = {
+  centerX: number;
+  centerY: number;
+  maxWidth: number;
+  maxSize: number;
+  minSize?: number;
+};
+/**
+ * Draws text centered on a fixed point measured from the printed template's
+ * blank/underline, shrinking the font until it fits maxWidth. Centering the
+ * (font-size-dependent) text block on a fixed point — rather than anchoring
+ * a fixed y at a fixed font size — keeps short and long values sitting on
+ * the same printed line instead of drifting as the font shrinks.
+ *
+ * Deliberately never passes `width` to the final `.text()` call: PDFKit
+ * wraps onto a second line whenever `width` is set, even with
+ * `lineBreak: false` (an actual PDFKit quirk, not just an unused option).
+ * A wrapped second line would spill into the row below on this fixed-layout
+ * template, so pathologically long values are left to overflow gracefully
+ * on one line at the minimum size instead.
+ */
+const drawFitted = (
+  doc: PDFKit.PDFDocument,
+  text: string,
+  { centerX, centerY, maxWidth, maxSize, minSize = 8 }: FitField,
+) => {
+  let size = maxSize;
+  doc.fontSize(size);
+  while (size > minSize && doc.widthOfString(text) > maxWidth) {
+    size -= 0.5;
+    doc.fontSize(size);
+  }
+  const width = doc.widthOfString(text);
+  const height = doc.currentLineHeight();
+  doc.text(text, centerX - width / 2, centerY - height / 2, { lineBreak: false });
+};
+// Field centers were measured directly from assets/certificate-demo.jpeg's
+// printed blanks/underlines (in template pixels, converted to the 841.89x595.28pt
+// page PDFKit renders it at) so text sits on the pre-printed lines regardless
+// of how long or short the value is.
+const CERTIFICATE_FIELDS: Record<string, FitField> = {
+  resultNumber: { centerX: 510, centerY: 300, maxWidth: 72, maxSize: 17, minSize: 10 },
+  score: { centerX: 676, centerY: 300, maxWidth: 158, maxSize: 17, minSize: 9 },
+  nameHindi: { centerX: 314, centerY: 328, maxWidth: 166, maxSize: 21, minSize: 11 },
+  guardianName: { centerX: 598, centerY: 328, maxWidth: 188, maxSize: 17, minSize: 9 },
+  className: { centerX: 272, centerY: 361, maxWidth: 44, maxSize: 18, minSize: 9 },
+  age: { centerX: 364, centerY: 361, maxWidth: 24, maxSize: 18, minSize: 9 },
+  rank: { centerX: 436, centerY: 361, maxWidth: 53, maxSize: 18, minSize: 9 },
+};
+
 @Injectable()
 export class ExportService {
   async certificate(cycle: ResultCycle, candidate: Candidate) {
     const resultDate = new Intl.DateTimeFormat("hi-IN", {
       dateStyle: "medium",
-      timeZone: "UTC",
-    }).format(new Date(`${candidate.resultDate}T00:00:00Z`));
+      timeZone: "Asia/Kolkata",
+    }).format(new Date());
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
@@ -72,21 +122,15 @@ export class ExportService {
     doc.image(templatePath(), 0, 0, { width: 841.89, height: 595.28 });
     doc.registerFont("Noto", devanagariFont);
     doc.registerFont("NotoBold", boldFont);
+    doc.font("NotoBold").fillColor("#0a3b72");
+    drawFitted(doc, cycle.resultNumber, CERTIFICATE_FIELDS.resultNumber!);
+    drawFitted(doc, String(candidate.score), CERTIFICATE_FIELDS.score!);
+    drawFitted(doc, candidate.nameHindi, CERTIFICATE_FIELDS.nameHindi!);
+    drawFitted(doc, candidate.guardianName, CERTIFICATE_FIELDS.guardianName!);
+    drawFitted(doc, candidate.className, CERTIFICATE_FIELDS.className!);
+    drawFitted(doc, String(candidate.age), CERTIFICATE_FIELDS.age!);
+    drawFitted(doc, String(candidate.rank), CERTIFICATE_FIELDS.rank!);
     doc
-      .fillColor("#0a3b72")
-      .font("NotoBold")
-      .fontSize(17)
-      .text(cycle.resultNumber, 455, 273, { width: 85, align: "center" })
-      .text(String(candidate.score), 585, 273, { width: 85, align: "center" });
-    doc
-      .fontSize(21)
-      .text(candidate.nameHindi, 225, 306, { width: 180, align: "center" })
-      .fontSize(17)
-      .text(candidate.guardianName, 505, 306, { width: 185, align: "center" })
-      .fontSize(18)
-      .text(candidate.className, 215, 340, { width: 65, align: "center" })
-      .text(String(candidate.age), 313, 340, { width: 55, align: "center" })
-      .text(String(candidate.rank), 398, 340, { width: 55, align: "center" })
       .fontSize(12)
       .fillColor("#152a43")
       .text(resultDate, 585, 500, { width: 90, align: "center" });

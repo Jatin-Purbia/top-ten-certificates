@@ -210,6 +210,7 @@ export class PublicController {
     const pdf = await this.exports.certificate(cycle, candidate);
     res
       .type("application/pdf")
+      .setHeader("Cache-Control", "no-store, private")
       .setHeader(
         "Content-Disposition",
         'inline; filename="certificate-preview.pdf"',
