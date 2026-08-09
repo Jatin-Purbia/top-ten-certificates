@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: pathey-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/v1/public/cycles
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      - key: WEB_ORIGIN
+        value: https://your-frontend-domain.example
+      - key: MONGODB_URI
+        sync: false
+      - key: COOKIE_SECRET
+        sync: false
+      - key: ADMIN_JWT_SECRET
+        sync: false
+      - key: INTERNAL_JOB_SECRET
+        sync: false
