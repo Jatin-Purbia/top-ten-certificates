@@ -33,7 +33,7 @@ export default function Cycles() {
   const form = useForm<CycleInput>({
     resolver: zodResolver(cycleInputSchema),
     defaultValues: {
-      title: "बाल प्रश्नोत्तरी",
+      title: "",
       resultNumber: "",
       issueNumber: "",
       publicationAt: initialPublicationAt,
