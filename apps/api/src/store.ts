@@ -282,6 +282,16 @@ export class Store implements OnModuleInit {
   async createCycle(input: CycleInput, actorId: string) {
     const now = iso(),
       publication = new Date(input.publicationAt);
+    // The create-cycle form no longer offers a template picker, so a cycle
+    // created without one would otherwise be silently unpublishable later
+    // (publish() requires an approved template) — default to the first
+    // approved, active template when the caller doesn't specify one.
+    let certificateTemplateId = input.certificateTemplateId ?? null;
+    if (!certificateTemplateId) {
+      const templates = await this.listTemplates();
+      certificateTemplateId =
+        templates.find((t) => t.approved && t.active)?.id ?? null;
+    }
     const item: ResultCycle = {
       id: randomUUID(),
       publicSlug: nanoid(24),
@@ -297,7 +307,7 @@ export class Store implements OnModuleInit {
       ).toISOString(),
       downloadWindowDays: this.availability.days,
       status: input.status ?? "draft",
-      certificateTemplateId: input.certificateTemplateId ?? null,
+      certificateTemplateId,
       candidateCount: 0,
       downloadCount: 0,
       createdAt: now,

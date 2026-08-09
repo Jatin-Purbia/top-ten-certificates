@@ -18,10 +18,16 @@ const tone = (s: string) =>
       ? "danger"
       : "warning";
 const initialPublicationAt = new Date(Date.now() + 86_400_000).toISOString();
+// datetime-local inputs need "YYYY-MM-DDTHH:mm" with no timezone offset —
+// this trims the stored ISO string down to that instead of reformatting it,
+// so the same field works for both display and re-submission.
+const toDatetimeLocal = (iso: string) => iso.slice(0, 16);
+
 export default function Cycles() {
   const [search, setSearch] = useState(""),
     [status, setStatus] = useState(""),
     [open, setOpen] = useState(false),
+    [editing, setEditing] = useState<ResultCycle | null>(null),
     qc = useQueryClient();
   const { data, isPending, error } = useQuery({
     queryKey: ["cycles", search, status],
@@ -35,7 +41,6 @@ export default function Cycles() {
     defaultValues: {
       title: "",
       resultNumber: "",
-      issueNumber: "",
       publicationAt: initialPublicationAt,
       status: "draft",
     },
@@ -49,6 +54,30 @@ export default function Cycles() {
       form.reset();
     },
   });
+  const editForm = useForm<Partial<CycleInput>>({
+    resolver: zodResolver(cycleInputSchema.partial()),
+  });
+  const update = useMutation({
+    mutationFn: (v: Partial<CycleInput>) =>
+      adminFetch(`/admin/cycles/${editing!.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(v),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cycles"] });
+      setEditing(null);
+    },
+  });
+  const openEdit = (c: ResultCycle) => {
+    editForm.reset({
+      title: c.title,
+      resultNumber: c.resultNumber,
+      publicationAt: toDatetimeLocal(c.publicationAt),
+      status: c.status === "scheduled" ? "scheduled" : "draft",
+    });
+    setEditing(c);
+  };
+  const editable = editing && editing.status !== "published" && editing.status !== "expired" && editing.status !== "purged";
   return (
     <>
       <div className="page-head">
@@ -115,12 +144,20 @@ export default function Cycles() {
                     <td>{formatIndia(c.publicationAt)}</td>
                     <td>{formatIndia(c.expiresAt)}</td>
                     <td>
-                      <Link
-                        className="btn btn-secondary"
-                        href={`/admin/cycles/${c.id}`}
-                      >
-                        Manage
-                      </Link>
+                      <div className="actions">
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => openEdit(c)}
+                        >
+                          Edit
+                        </button>
+                        <Link
+                          className="btn btn-secondary"
+                          href={`/admin/cycles/${c.id}`}
+                        >
+                          Manage
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -164,11 +201,6 @@ export default function Cycles() {
                 error={form.formState.errors.resultNumber?.message}
               />
               <Field
-                label="Magazine issue"
-                {...form.register("issueNumber")}
-                error={form.formState.errors.issueNumber?.message}
-              />
-              <Field
                 label="Publication date and time"
                 type="datetime-local"
                 {...form.register("publicationAt", {
@@ -194,6 +226,93 @@ export default function Cycles() {
                 </Button>
                 <Button type="submit" disabled={create.isPending}>
                   {create.isPending ? "Creating…" : "Create draft"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {editing && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setEditing(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-cycle-title"
+          >
+            <h2 id="edit-cycle-title">Edit result cycle</h2>
+            {!editable && (
+              <p className="notice">
+                This cycle is {editing.status} — only the title can still be
+                changed. Use Publish/Expire on the cycle&apos;s own page for
+                status changes.
+              </p>
+            )}
+            <form
+              className="form-grid"
+              onSubmit={editForm.handleSubmit((v) => {
+                const patch: Partial<CycleInput> = editable
+                  ? {
+                      ...v,
+                      publicationAt: v.publicationAt
+                        ? new Date(v.publicationAt).toISOString()
+                        : undefined,
+                    }
+                  : { title: v.title };
+                update.mutate(patch);
+              })}
+            >
+              <Field
+                label="Quiz / competition title"
+                {...editForm.register("title")}
+                error={editForm.formState.errors.title?.message}
+              />
+              {editable && (
+                <>
+                  <Field
+                    label="Result number"
+                    {...editForm.register("resultNumber")}
+                    error={editForm.formState.errors.resultNumber?.message}
+                  />
+                  <Field
+                    label="Publication date and time"
+                    type="datetime-local"
+                    {...editForm.register("publicationAt")}
+                    error={editForm.formState.errors.publicationAt?.message}
+                  />
+                  <label className="field span-2">
+                    Status
+                    <select {...editForm.register("status")}>
+                      <option value="draft">draft</option>
+                      <option value="scheduled">scheduled</option>
+                    </select>
+                  </label>
+                </>
+              )}
+              {update.error && (
+                <p className="notice notice-danger span-2">
+                  {update.error.message}
+                </p>
+              )}
+              <div
+                className="actions span-2"
+                style={{ justifyContent: "flex-end" }}
+              >
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setEditing(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={update.isPending}>
+                  {update.isPending ? "Saving…" : "Save changes"}
                 </Button>
               </div>
             </form>

@@ -10,11 +10,11 @@ import {
 } from "@pathey/types";
 import { ensureHindi, getNameSuggestions } from "@pathey/hindi-text";
 import { Download } from "lucide-react";
-import { Badge, Button, Card, Field } from "@pathey/ui";
+import { Badge, Button, Card, Field, useConfirm } from "@pathey/ui";
 import { adminFetch, downloadAdmin, previewAdmin, formatIndia } from "@/lib/api";
 
 const fieldLabels: Record<keyof CandidateInput, string> = {
-  participantId: "Unique participant/reference ID",
+  participantId: "Serial number / क्रमांक संख्या",
   certificateNumber: "Internal certificate number",
   phone: "Mobile number (used to access the certificate)",
   nameHindi: "Candidate name (Hindi)",
@@ -26,7 +26,7 @@ const fieldLabels: Record<keyof CandidateInput, string> = {
   address: "Full Address",
   score: "Score on certificate",
   rank: "Rank/position on certificate",
-  resultDate: "Serial number / क्रम संख्या (date)",
+  resultDate: "Date on certificate",
   photoPath: "Photo path",
 };
 
@@ -163,6 +163,7 @@ function CandidateFields({
 
 export function CycleWorkspace({ id }: { id: string }) {
   const qc = useQueryClient(),
+    confirmDialog = useConfirm(),
     [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Candidate | null>(null);
@@ -223,9 +224,10 @@ export function CycleWorkspace({ id }: { id: string }) {
   });
   const publish = async () => {
     if (
-      !confirm(
+      !(await confirmDialog(
         "Publish this cycle? Candidate data becomes protected and important changes will be audited.",
-      )
+        { title: "Publish cycle", confirmLabel: "Publish" },
+      ))
     )
       return;
     setError("");
@@ -238,9 +240,10 @@ export function CycleWorkspace({ id }: { id: string }) {
   };
   const exp = async () => {
     if (
-      !confirm(
+      !(await confirmDialog(
         "Expire this certificate window immediately? Public access will be blocked.",
-      )
+        { title: "Expire cycle", confirmLabel: "Expire", danger: true },
+      ))
     )
       return;
     await adminFetch(`/admin/cycles/${id}/expire`, { method: "POST" });

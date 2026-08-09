@@ -97,13 +97,25 @@ const drawFitted = (
     stroke: true,
   });
 };
+// rank is schema-constrained to 1–10 (candidateInputSchema), so a fixed
+// lookup is safe — the source result sheets print rank as Roman numerals
+// (I–X), and the certificate matches that instead of Arabic numerals.
+const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+const toRomanRank = (rank: number) => ROMAN_NUMERALS[rank - 1] ?? String(rank);
 // Field centers were measured directly from assets/certificate-demo.jpeg's
 // printed blanks/underlines (in template pixels, converted to the 841.89x595.28pt
 // page PDFKit renders it at) so text sits on the pre-printed lines regardless
 // of how long or short the value is.
 const CERTIFICATE_FIELDS: Record<string, FitField> = {
-  resultNumber: { centerX: 510, centerY: 300, maxWidth: 72, maxSize: 17, minSize: 10 },
-  score: { centerX: 676, centerY: 300, maxWidth: 158, maxSize: 17, minSize: 9 },
+  // Re-measured against the actual "क्रमांक-____(अंक____)" gaps in the
+  // template (the previous centers/widths were tuned for shorter values —
+  // "97-1"-style serial numbers are wider than the "1"/"97" they were set
+  // up for, and crowded into the neighbouring printed text as a result):
+  // "क्रमांक-" ends at x=942px, "(अंक" starts at x=1043px (gap 101px);
+  // "(अंक" ends at x=1114px, the closing ")" starts at x=1401px (gap 287px),
+  // in the template's 1600x1133px source, scaled to the 841.89x595.28pt page.
+  resultNumber: { centerX: 522, centerY: 300, maxWidth: 48, maxSize: 17, minSize: 9 },
+  score: { centerX: 662, centerY: 300, maxWidth: 145, maxSize: 17, minSize: 9 },
   // 21pt matches the printed template's own text: measured the ink-height of
   // "में श्री/सुश्री ... पुत्र/पुत्री श्री" directly from certificate-demo.jpeg
   // (~47px at the template's 1600x1133 resolution, ~24.5pt once scaled to the
@@ -141,13 +153,17 @@ export class ExportService {
     doc.registerFont("Noto", devanagariFont);
     doc.registerFont("NotoBold", boldFont);
     doc.font("NotoBold").fillColor("#08214A").strokeColor("#08214A").lineWidth(0.25);
-    drawFitted(doc, cycle.resultNumber, CERTIFICATE_FIELDS.resultNumber!);
+    // Prints the candidate's own serial number (e.g. "97-1") rather than the
+    // bare cycle result number — the participantId already embeds the result
+    // number as its prefix in the common case, so this reuses the template's
+    // one "क्रमांक-" blank instead of needing a second spot on the artwork.
+    drawFitted(doc, candidate.participantId || cycle.resultNumber, CERTIFICATE_FIELDS.resultNumber!);
     drawFitted(doc, String(candidate.score), CERTIFICATE_FIELDS.score!);
     drawFitted(doc, ensureHindi(candidate.nameHindi?.trim() || candidate.nameEnglish), CERTIFICATE_FIELDS.nameHindi!);
     drawFitted(doc, ensureHindi(candidate.guardianName), CERTIFICATE_FIELDS.guardianName!);
     drawFitted(doc, ensureHindi(candidate.className), CERTIFICATE_FIELDS.className!);
     drawFitted(doc, String(candidate.age), CERTIFICATE_FIELDS.age!);
-    drawFitted(doc, String(candidate.rank), CERTIFICATE_FIELDS.rank!);
+    drawFitted(doc, toRomanRank(candidate.rank), CERTIFICATE_FIELDS.rank!);
     doc
       .fontSize(12)
       .fillColor("#08214A")
