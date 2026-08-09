@@ -2,10 +2,20 @@ import 'reflect-metadata';
 import { BadRequestException, Catch, type ArgumentsHost, type ExceptionFilter, HttpException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
+import * as helmetNs from 'helmet';
 import cookieParser from 'cookie-parser';
 import type { Request, Response } from 'express';
 import { AppModule } from './app.module.js';
+
+// `helmet`'s package.json exports dual ESM/CJS type declarations without an
+// explicit `types` condition; under `moduleResolution: NodeNext` this lets
+// the default-export type resolve inconsistently across environments (it
+// type-checks locally but fails on Vercel's build). Resolving through the
+// namespace import and asserting the callable shape sidesteps that resolver
+// ambiguity instead of depending on it.
+const helmet = ((helmetNs as { default?: unknown }).default ?? helmetNs) as (
+  options?: Record<string, unknown>,
+) => (req: Request, res: Response, next: (err?: unknown) => void) => void;
 
 @Catch()
 class ApiExceptionFilter implements ExceptionFilter {
