@@ -7,7 +7,7 @@ import { claimSchema } from "@pathey/types";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { Download, LockKeyhole, ShieldCheck } from "lucide-react";
-import { Button, Field } from "@pathey/ui";
+import { Button } from "@pathey/ui";
 import { apiUrl, formatIndia } from "@/lib/api";
 
 const formSchema = claimSchema.omit({ cycleSlug: true });
@@ -203,7 +203,7 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
 
   return (
     <main className="public-page">
-      <div className="claim-shell">
+      <div className={session ? "claim-shell claim-shell--ready" : "claim-shell"}>
         <header className="claim-head">
           <ShieldCheck size={30} aria-hidden />
           <div>
@@ -265,15 +265,25 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
                 with the publication office.
               </p>
               <form onSubmit={form.handleSubmit(submit)} noValidate className="phone-hero">
-                <Field
-                  label="Mobile number"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  autoFocus
-                  {...form.register("phone")}
-                  error={form.formState.errors.phone?.message}
-                />
+                <label className="field" htmlFor="phone">
+                  <span>Mobile number</span>
+                  <div className="phone-input-group">
+                    <span className="phone-prefix" aria-hidden>+91</span>
+                    <input
+                      id="phone"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      autoFocus
+                      maxLength={10}
+                      aria-invalid={!!form.formState.errors.phone}
+                      {...form.register("phone")}
+                    />
+                  </div>
+                  {form.formState.errors.phone?.message && (
+                    <small role="alert">{form.formState.errors.phone.message}</small>
+                  )}
+                </label>
                 {form.formState.errors.root && (
                   <div className="notice notice-danger" role="alert">
                     <strong>{form.formState.errors.root.message}</strong>

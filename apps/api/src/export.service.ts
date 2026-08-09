@@ -94,7 +94,7 @@ const drawFitted = (
 const CERTIFICATE_FIELDS: Record<string, FitField> = {
   resultNumber: { centerX: 510, centerY: 300, maxWidth: 72, maxSize: 17, minSize: 10 },
   score: { centerX: 676, centerY: 300, maxWidth: 158, maxSize: 17, minSize: 9 },
-  nameHindi: { centerX: 314, centerY: 328, maxWidth: 166, maxSize: 21, minSize: 11 },
+  nameHindi: { centerX: 314, centerY: 328, maxWidth: 166, maxSize: 26, minSize: 11 },
   guardianName: { centerX: 598, centerY: 328, maxWidth: 188, maxSize: 17, minSize: 9 },
   className: { centerX: 272, centerY: 361, maxWidth: 44, maxSize: 18, minSize: 9 },
   age: { centerX: 364, centerY: 361, maxWidth: 24, maxSize: 18, minSize: 9 },
@@ -122,7 +122,7 @@ export class ExportService {
     doc.image(templatePath(), 0, 0, { width: 841.89, height: 595.28 });
     doc.registerFont("Noto", devanagariFont);
     doc.registerFont("NotoBold", boldFont);
-    doc.font("NotoBold").fillColor("#0a3b72");
+    doc.font("NotoBold").fillColor("#08214A");
     drawFitted(doc, cycle.resultNumber, CERTIFICATE_FIELDS.resultNumber!);
     drawFitted(doc, String(candidate.score), CERTIFICATE_FIELDS.score!);
     drawFitted(doc, candidate.nameHindi, CERTIFICATE_FIELDS.nameHindi!);
