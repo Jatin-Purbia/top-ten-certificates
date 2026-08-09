@@ -205,121 +205,101 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
     <main className="public-page">
       <div className="claim-shell">
         <header className="claim-head">
+          <ShieldCheck size={30} aria-hidden />
           <div>
             <h1>पाथेय कण · प्रमाण पत्र</h1>
-            <div>Secure Certificate Portal · No account login required</div>
+            <span>Secure Certificate Portal · No account login required</span>
           </div>
-          <ShieldCheck size={38} aria-hidden />
         </header>
-        <div className="claim-body">
-          <aside className="claim-info">
-            {!fixedSlug && available.length > 1 && (
-              <label className="field public-cycle-picker">
-                <span>Result / परिणाम चुनें</span>
-                <select
-                  value={selectedSlug}
-                  onChange={(event) => chooseCycle(event.target.value)}
-                >
-                  {available.map((item) => (
-                    <option value={item.slug} key={item.slug}>
-                      {item.title} · Result {item.resultNumber}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <h2>{current.title}</h2>
-            <p>
-              <strong>Result / परिणाम:</strong> {current.resultNumber}
-            </p>
-            <div className="deadline">
-              <strong>Download deadline</strong>
-              <br />
-              {formatIndia(current.expiresAt)}
-              <br />
-              <span lang="hi">डाउनलोड की अंतिम तिथि</span>
-            </div>
-            <div className="lang-copy">
-              <p lang="hi">
-                अपना मोबाइल नंबर दर्ज करें जो प्रकाशन कार्यालय के पास दर्ज है।
-              </p>
-              <p>
-                Enter the mobile number registered with the publication
-                office.
-              </p>
-            </div>
-            <p className="secure-note">
-              <LockKeyhole size={17} aria-hidden /> Your mobile number is
-              checked securely and never shown publicly.
-            </p>
-          </aside>
-          <section className="claim-form">
-            {session ? (
-              <>
-                <h2>Your personalised certificate is ready</h2>
-                <p>
-                  <strong>{session.candidate.nameHindi}</strong> ·{" "}
-                  {session.candidate.nameEnglish}
-                </p>
-                <iframe
-                  className="pdf-frame"
-                  title="Certificate preview"
-                  src={apiUrl("/public/certificates/preview")}
-                />
-                <Button
-                  style={{ width: "100%", marginTop: 16 }}
-                  onClick={download}
-                  disabled={downloading}
-                >
-                  <Download size={18} />
-                  {downloading ? "Preparing PDF…" : "Download certificate PDF"}
-                </Button>
-                <p className="session-deadline">
-                  You may download again until {formatIndia(session.cycle.expiresAt)}.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2>Enter your mobile number</h2>
-                <p className="form-intro">
-                  No account is needed. Enter the 10-digit mobile number
-                  registered with the publication office to view and download
-                  your personalised certificate.
-                </p>
-                <form onSubmit={form.handleSubmit(submit)} noValidate>
-                  <Field
-                    label="Mobile number"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    {...form.register("phone")}
-                    error={form.formState.errors.phone?.message}
-                  />
-                  {form.formState.errors.root && (
-                    <div className="notice notice-danger" role="alert">
-                      <strong>{form.formState.errors.root.message}</strong>
-                      {messageHi && (
-                        <>
-                          <br />
-                          <span lang="hi">{messageHi}</span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Generating secure preview…"
-                      : "Generate my certificate"}
-                  </Button>
-                  <p className="credential-help">
-                    Use the same mobile number that was provided during
-                    registration; it is not printed in the magazine.
-                  </p>
-                </form>
-              </>
-            )}
-          </section>
+        <div className="claim-context">
+          {!fixedSlug && available.length > 1 && (
+            <label className="field public-cycle-picker">
+              <span>Result / परिणाम चुनें</span>
+              <select
+                value={selectedSlug}
+                onChange={(event) => chooseCycle(event.target.value)}
+              >
+                {available.map((item) => (
+                  <option value={item.slug} key={item.slug}>
+                    {item.title} · Result {item.resultNumber}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <p>
+            <strong>{current.title}</strong> · Result {current.resultNumber}
+            {" · "}Download by <strong>{formatIndia(current.expiresAt)}</strong>
+          </p>
         </div>
+        <section className="claim-form">
+          {session ? (
+            <>
+              <h2>Your personalised certificate is ready</h2>
+              <p>
+                <strong>{session.candidate.nameHindi}</strong> ·{" "}
+                {session.candidate.nameEnglish}
+              </p>
+              <iframe
+                className="pdf-frame"
+                title="Certificate preview"
+                src={apiUrl("/public/certificates/preview")}
+              />
+              <Button
+                style={{ width: "100%", marginTop: 16 }}
+                onClick={download}
+                disabled={downloading}
+              >
+                <Download size={18} />
+                {downloading ? "Preparing PDF…" : "Download certificate PDF"}
+              </Button>
+              <p className="session-deadline">
+                You may download again until {formatIndia(session.cycle.expiresAt)}.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>Enter your mobile number to download your certificate</h2>
+              <p className="form-intro">
+                No account needed. Use the 10-digit mobile number registered
+                with the publication office.
+              </p>
+              <form onSubmit={form.handleSubmit(submit)} noValidate className="phone-hero">
+                <Field
+                  label="Mobile number"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  autoFocus
+                  {...form.register("phone")}
+                  error={form.formState.errors.phone?.message}
+                />
+                {form.formState.errors.root && (
+                  <div className="notice notice-danger" role="alert">
+                    <strong>{form.formState.errors.root.message}</strong>
+                    {messageHi && (
+                      <>
+                        <br />
+                        <span lang="hi">{messageHi}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <Button type="submit" disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting
+                    ? "Generating secure preview…"
+                    : "Generate my certificate"}
+                </Button>
+              </form>
+              <p className="secure-note">
+                <LockKeyhole size={16} aria-hidden /> Your mobile number is
+                checked securely and never shown publicly. It's the same
+                number provided during registration — not the one printed in
+                the magazine.
+              </p>
+            </>
+          )}
+        </section>
       </div>
     </main>
   );
