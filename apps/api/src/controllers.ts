@@ -28,6 +28,7 @@ import {
 import { z } from "zod";
 import { Store } from "./store.js";
 import { ExportService } from "./export.service.js";
+import { ensureHindi } from "./hindi-text.js";
 import {
   ClaimRateLimiter,
   Public,
@@ -194,12 +195,12 @@ export class PublicController {
     return {
       data: {
         candidate: {
-          nameHindi: candidate.nameHindi,
+          nameHindi: ensureHindi(candidate.nameHindi?.trim() || candidate.nameEnglish),
           nameEnglish: candidate.nameEnglish,
           certificateNumber: candidate.certificateNumber,
           rank: candidate.rank,
           score: candidate.score,
-          className: candidate.className,
+          className: ensureHindi(candidate.className),
           resultDate: candidate.resultDate,
         },
         cycle: {

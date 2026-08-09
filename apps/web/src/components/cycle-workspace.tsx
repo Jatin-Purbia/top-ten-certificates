@@ -15,7 +15,7 @@ const fieldLabels: Record<keyof CandidateInput, string> = {
   participantId: "Unique participant/reference ID",
   certificateNumber: "Internal certificate number",
   phone: "Mobile number (used to access the certificate)",
-  nameHindi: "Candidate name on certificate (Hindi)",
+  nameHindi: "Candidate name on certificate (Hindi) — optional, auto-generated from the English name if left blank",
   nameEnglish: "Candidate name (English/admin)",
   guardianName: "Parent/guardian name on certificate",
   className: "Class on certificate",

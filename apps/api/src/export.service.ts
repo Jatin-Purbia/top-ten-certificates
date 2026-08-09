@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Candidate, ResultCycle } from "@pathey/types";
 import { sanitizeFilename } from "./domain.js";
+import { ensureHindi } from "./hindi-text.js";
 
 const assetPath = (relativePath: string) => {
   const choices = [
@@ -85,7 +86,16 @@ const drawFitted = (
   }
   const width = doc.widthOfString(text);
   const height = doc.currentLineHeight();
-  doc.text(text, centerX - width / 2, centerY - height / 2, { lineBreak: false });
+  // "NotoBold" is registered from the same file as the regular weight (this
+  // font has no separate bold instance embedded), so fill-only text renders
+  // at regular weight regardless of which name is selected. Filling AND
+  // stroking the same glyphs is the standard PDF "faux bold" technique —
+  // it thickens the strokes to actually look bold.
+  doc.text(text, centerX - width / 2, centerY - height / 2, {
+    lineBreak: false,
+    fill: true,
+    stroke: true,
+  });
 };
 // Field centers were measured directly from assets/certificate-demo.jpeg's
 // printed blanks/underlines (in template pixels, converted to the 841.89x595.28pt
@@ -94,8 +104,14 @@ const drawFitted = (
 const CERTIFICATE_FIELDS: Record<string, FitField> = {
   resultNumber: { centerX: 510, centerY: 300, maxWidth: 72, maxSize: 17, minSize: 10 },
   score: { centerX: 676, centerY: 300, maxWidth: 158, maxSize: 17, minSize: 9 },
-  nameHindi: { centerX: 314, centerY: 328, maxWidth: 166, maxSize: 26, minSize: 11 },
-  guardianName: { centerX: 598, centerY: 328, maxWidth: 188, maxSize: 17, minSize: 9 },
+  // 21pt matches the printed template's own text: measured the ink-height of
+  // "में श्री/सुश्री ... पुत्र/पुत्री श्री" directly from certificate-demo.jpeg
+  // (~47px at the template's 1600x1133 resolution, ~24.5pt once scaled to the
+  // 841.89x595.28pt page) and solved for the Noto Sans Devanagari size that
+  // produces the same ink-height for that text. Long values still shrink
+  // down to minSize via drawFitted's fit-to-width loop above.
+  nameHindi: { centerX: 314, centerY: 328, maxWidth: 166, maxSize: 21, minSize: 10 },
+  guardianName: { centerX: 598, centerY: 328, maxWidth: 188, maxSize: 21, minSize: 10 },
   className: { centerX: 272, centerY: 361, maxWidth: 44, maxSize: 18, minSize: 9 },
   age: { centerX: 364, centerY: 361, maxWidth: 24, maxSize: 18, minSize: 9 },
   rank: { centerX: 436, centerY: 361, maxWidth: 53, maxSize: 18, minSize: 9 },
@@ -104,8 +120,10 @@ const CERTIFICATE_FIELDS: Record<string, FitField> = {
 @Injectable()
 export class ExportService {
   async certificate(cycle: ResultCycle, candidate: Candidate) {
-    const resultDate = new Intl.DateTimeFormat("hi-IN", {
-      dateStyle: "medium",
+    const resultDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
       timeZone: "Asia/Kolkata",
     }).format(new Date());
     const doc = new PDFDocument({
@@ -122,18 +140,18 @@ export class ExportService {
     doc.image(templatePath(), 0, 0, { width: 841.89, height: 595.28 });
     doc.registerFont("Noto", devanagariFont);
     doc.registerFont("NotoBold", boldFont);
-    doc.font("NotoBold").fillColor("#08214A");
+    doc.font("NotoBold").fillColor("#08214A").strokeColor("#08214A").lineWidth(0.25);
     drawFitted(doc, cycle.resultNumber, CERTIFICATE_FIELDS.resultNumber!);
     drawFitted(doc, String(candidate.score), CERTIFICATE_FIELDS.score!);
-    drawFitted(doc, candidate.nameHindi, CERTIFICATE_FIELDS.nameHindi!);
-    drawFitted(doc, candidate.guardianName, CERTIFICATE_FIELDS.guardianName!);
-    drawFitted(doc, candidate.className, CERTIFICATE_FIELDS.className!);
+    drawFitted(doc, ensureHindi(candidate.nameHindi?.trim() || candidate.nameEnglish), CERTIFICATE_FIELDS.nameHindi!);
+    drawFitted(doc, ensureHindi(candidate.guardianName), CERTIFICATE_FIELDS.guardianName!);
+    drawFitted(doc, ensureHindi(candidate.className), CERTIFICATE_FIELDS.className!);
     drawFitted(doc, String(candidate.age), CERTIFICATE_FIELDS.age!);
     drawFitted(doc, String(candidate.rank), CERTIFICATE_FIELDS.rank!);
     doc
       .fontSize(12)
-      .fillColor("#152a43")
-      .text(resultDate, 585, 500, { width: 90, align: "center" });
+      .fillColor("#08214A")
+      .text(resultDate, 554, 500, { width: 90, align: "center" });
     return collect(doc);
   }
   async qr(url: string, format: "svg" | "png", dark = false) {
@@ -189,7 +207,7 @@ export class ExportService {
       .sort((a, b) => a.rank - b.rank)
       .map(
         (c, i) =>
-          `<g transform="translate(90 ${540 + i * 116})"><circle cx="35" cy="35" r="31" fill="#f36a21"/><text x="35" y="46" text-anchor="middle" class="rank">${c.rank}</text><text x="95" y="30" class="name">${escapeXml(c.nameHindi)}</text><text x="95" y="68" class="city">${escapeXml(c.city)}</text></g>`,
+          `<g transform="translate(90 ${540 + i * 116})"><circle cx="35" cy="35" r="31" fill="#f36a21"/><text x="35" y="46" text-anchor="middle" class="rank">${c.rank}</text><text x="95" y="30" class="name">${escapeXml(ensureHindi(c.nameHindi?.trim() || c.nameEnglish))}</text><text x="95" y="68" class="city">${escapeXml(c.city)}</text></g>`,
       )
       .join("");
     return `<svg width="2480" height="3508" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fff5e7"/><rect x="55" y="55" width="2370" height="3398" rx="20" fill="none" stroke="#22b8b2" stroke-width="7"/><rect x="55" y="55" width="2370" height="235" fill="#0b3e68"/><text x="1240" y="160" text-anchor="middle" class="brand">पाथेय कण</text><text x="1240" y="410" text-anchor="middle" class="title">बाल प्रश्नोत्तरी ${escapeXml(cycle.resultNumber)} के</text><text x="1240" y="485" text-anchor="middle" class="heading">टॉप 10 परिणाम</text>${rows}<rect x="1530" y="620" width="720" height="1040" rx="30" fill="#ffffff" stroke="#f36a21" stroke-width="6"/><image x="1690" y="730" width="400" height="400" href="${qrData}"/><text x="1890" y="1200" text-anchor="middle" class="scan">प्रमाण पत्र डाउनलोड करें</text><text x="1890" y="1250" text-anchor="middle" class="small">Scan to claim your certificate</text><text x="1890" y="1330" text-anchor="middle" class="small">अंतिम तिथि: ${new Date(cycle.expiresAt).toLocaleDateString("hi-IN", { timeZone: "Asia/Kolkata" })}</text><text x="1890" y="1480" text-anchor="middle" class="issue">अंक ${escapeXml(cycle.issueNumber)}</text><path d="M1530 1800h720" stroke="#22b8b2" stroke-width="5"/><text x="1890" y="1930" text-anchor="middle" class="scan">विजेताओं को हार्दिक बधाई</text><text x="1890" y="2010" text-anchor="middle" class="small">Certificate access is private.</text><text x="1890" y="2060" text-anchor="middle" class="small">Use the reference ID and claim code</text><text x="1890" y="2110" text-anchor="middle" class="small">provided separately by the office.</text><style>@font-face{font-family:Noto;src:url('${devanagariFont}')}text{font-family:Noto,Arial,sans-serif;fill:#0b3e68}.brand{font-size:92px;font-weight:700;fill:#fff}.title{font-size:56px}.heading{font-size:76px;font-weight:700;fill:#f36a21}.rank{font-size:39px;font-weight:700;fill:#fff}.name{font-size:46px;font-weight:700}.city{font-size:32px;fill:#456071}.scan{font-size:38px;font-weight:700}.small{font-size:27px}.issue{font-size:34px;fill:#f36a21}</style></svg>`;

@@ -20,7 +20,7 @@ export const phoneSchema = z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a vali
 export const candidateInputSchema = z.object({
   participantId: z.string().trim().min(3).max(64), certificateNumber: z.string().trim().min(3).max(64),
   phone: phoneSchema,
-  nameHindi: z.string().trim().min(1).max(120), nameEnglish: z.string().trim().min(1).max(120),
+  nameHindi: z.string().trim().max(120).optional(), nameEnglish: z.string().trim().min(1).max(120),
   guardianName: z.string().trim().min(1).max(120), className: z.string().trim().min(1).max(24),
   age: z.number().int().min(3).max(25), city: z.string().trim().min(1).max(100),
   score: z.number().min(0), rank: z.number().int().min(1).max(10),
