@@ -5,10 +5,15 @@
  *
  * Vendored rather than depended on directly because that package's only
  * public entry point (`indic-transliterator`) unconditionally imports
- * `react` at the top of the file — which isn't installed in this API and
- * would throw `ERR_MODULE_NOT_FOUND` at runtime. `engine.js` itself has no
- * dependencies at all, so copying just that logic sidesteps the broken
- * package export instead of fighting it.
+ * `react` at the top of the file — which would throw `ERR_MODULE_NOT_FOUND`
+ * wherever React isn't installed (this API has no React dependency at all).
+ * `engine.js` itself has no dependencies, so copying just that logic
+ * sidesteps the broken package export instead of fighting it.
+ *
+ * Lives in a shared package (rather than just `apps/api`) because the
+ * candidate form in `apps/web` also needs it client-side, for live Hindi
+ * name suggestions as an admin types — duplicating these lookup tables in
+ * both apps would be a real risk of them drifting apart.
  */
 
 const HALANT = '्';
@@ -126,4 +131,86 @@ export function ensureHindi(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return trimmed;
   return hasDevanagari(trimmed) ? trimmed : toDevanagari(trimmed.toLowerCase());
+}
+
+// Nasal + halant + consonant clusters collapse to the anusvara (ं) form,
+// e.g. न्त → ंत — the more common modern-Hindi spelling.
+function nasalToAnusvara(devText: string): string {
+  return devText
+    .replace(/न्([त-न])/g, 'ं$1')
+    .replace(/म्([प-म])/g, 'ं$1')
+    .replace(/ङ्([क-घ])/g, 'ं$1')
+    .replace(/ञ्([च-झ])/g, 'ं$1')
+    .replace(/ण्([ट-ढ])/g, 'ं$1');
+}
+
+/**
+ * Generates alternate phonetic spellings for a single Roman word or short
+ * phrase by systematically swapping vowel length, retroflex consonants, and
+ * a handful of other commonly-confused sound pairs, then transliterating
+ * each variant. There's no single "correct" Devanagari spelling for a Roman
+ * name, so this surfaces the plausible candidates for a person to pick from
+ * rather than silently committing to one.
+ */
+function generateVariants(word: string): string[] {
+  if (!word || !word.trim()) return [];
+  const lc = word.toLowerCase();
+  const raw: string[] = [];
+  const addedInputs = new Set<string>();
+  const add = (input: string) => {
+    if (addedInputs.has(input)) return;
+    addedInputs.add(input);
+    const devText = toDevanagari(input);
+    const anusvaraForm = nasalToAnusvara(devText);
+    if (anusvaraForm !== devText) raw.push(anusvaraForm);
+    raw.push(devText);
+  };
+  add(lc);
+  const de = lc.replace(/([bcdfghjklmnpqrstvwxyz])\1/g, '$1');
+  const hasDbl = de !== lc;
+  if (hasDbl) add(de);
+  const bases = hasDbl ? [lc, de] : [lc];
+  bases.forEach((b) => {
+    let v: string;
+    v = b.replace(/i(?!i|e)/g, 'ee'); if (v !== b) add(v);
+    v = b.replace(/ee/g, 'i'); if (v !== b) add(v);
+    v = b.replace(/u(?!u|o)/g, 'oo'); if (v !== b) add(v);
+    v = b.replace(/oo/g, 'u'); if (v !== b) add(v);
+    v = b.replace(/a(?![aiou])/g, 'aa'); if (v !== b) add(v);
+    v = b.replace(/aa/g, 'a'); if (v !== b) add(v);
+    v = b.replace(/e(?!e|i)/g, 'ai'); if (v !== b) add(v);
+    v = b.replace(/ai/g, 'e'); if (v !== b) add(v);
+    v = b.replace(/o(?!o|u)/g, 'au'); if (v !== b) add(v);
+    v = b.replace(/au/g, 'o'); if (v !== b) add(v);
+    v = b.replace(/ri(?=[^i]|$)/g, 'ru'); if (v !== b) add(v);
+    v = b.replace(/ru/g, 'ri'); if (v !== b) add(v);
+    v = b.replace(/sh/g, 'Sh'); if (v !== b) add(v);
+    v = b.replace(/Sh/gi, 'sh'); if (v !== b) add(v);
+    v = b.replace(/t(?!h)/g, 'T'); if (v !== b) add(v);
+    v = b.replace(/T(?!h)/g, 't'); if (v !== b) add(v);
+    v = b.replace(/d(?!h)/g, 'D'); if (v !== b) add(v);
+    v = b.replace(/D(?!h)/g, 'd'); if (v !== b) add(v);
+    v = b.replace(/n(?!$)/g, 'N'); if (v !== b) add(v);
+    v = b.replace(/N/g, 'n'); if (v !== b) add(v);
+  });
+  add(word.toLowerCase());
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  raw.forEach((t) => {
+    if (!seen.has(t)) { seen.add(t); unique.push(t); }
+  });
+  return unique;
+}
+
+/**
+ * Returns a short list of alternate Devanagari spellings for a Roman name
+ * (up to `limit`, default 8), for a "pick the right one" UI rather than
+ * committing to a single best-effort guess. Returns an empty list for
+ * inputs too short to meaningfully vary, or that already contain Devanagari
+ * (nothing to suggest — the real spelling is already there).
+ */
+export function getNameSuggestions(text: string, limit = 8): string[] {
+  const trimmed = text.trim();
+  if (trimmed.length < 2 || hasDevanagari(trimmed)) return [];
+  return generateVariants(trimmed).slice(0, limit);
 }

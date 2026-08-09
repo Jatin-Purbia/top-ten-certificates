@@ -461,8 +461,21 @@ export class Store implements OnModuleInit {
   }
   async createCandidate(cycleId: string, input: CandidateInput) {
     const now = iso();
+    // participantId/certificateNumber are optional on input — an admin adding
+    // a single candidate no longer types these in, so generate them from the
+    // cycle's result number + rank when missing (same convention the demo
+    // seed and CSV import already use), guaranteeing every stored candidate
+    // still has real, unique-per-cycle values.
+    const cycle = await this.getCycle(cycleId);
+    const resultNumber = cycle?.resultNumber || "0";
+    const participantId = input.participantId?.trim() || `${resultNumber}-${input.rank}`;
+    const certificateNumber =
+      input.certificateNumber?.trim() ||
+      `PK${resultNumber}-${String(input.rank).padStart(3, "0")}`;
     const item: Candidate = {
       ...input,
+      participantId,
+      certificateNumber,
       photoPath: input.photoPath ?? null,
       id: randomUUID(),
       cycleId,
@@ -505,7 +518,7 @@ export class Store implements OnModuleInit {
     if (new Set(all.map((x) => x.rank)).size !== all.length)
       throw new Error("DUPLICATE_RANK");
     if (
-      new Set(all.map((x) => x.participantId.toLowerCase())).size !== all.length
+      new Set(all.map((x) => (x.participantId ?? "").toLowerCase())).size !== all.length
     )
       throw new Error("DUPLICATE_PARTICIPANT_ID");
     if (new Set(all.map((x) => x.phone)).size !== all.length)

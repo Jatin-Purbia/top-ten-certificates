@@ -4,7 +4,7 @@
   "private": true,
   "scripts": { "dev": "next dev -p 3000", "build": "next build", "start": "next start -p 3000", "typecheck": "tsc --noEmit", "lint": "eslint . --max-warnings=0" },
   "dependencies": {
-    "@hookform/resolvers": "5.7.1", "@pathey/types": "*", "@pathey/ui": "*",
+    "@hookform/resolvers": "5.7.1", "@pathey/hindi-text": "*", "@pathey/types": "*", "@pathey/ui": "*",
     "@tanstack/react-query": "5.101.4", "lucide-react": "0.468.0", "next": "16.3.0", "react": "19.2.8", "react-dom": "19.2.8",
     "react-hook-form": "7.84.0", "zod": "4.4.3"
   },

@@ -18,11 +18,12 @@ export type ResultCycle = z.infer<typeof cycleSchema>;
 export const phoneSchema = z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number');
 
 export const candidateInputSchema = z.object({
-  participantId: z.string().trim().min(3).max(64), certificateNumber: z.string().trim().min(3).max(64),
+  participantId: z.string().trim().max(64).optional(), certificateNumber: z.string().trim().max(64).optional(),
   phone: phoneSchema,
   nameHindi: z.string().trim().max(120).optional(), nameEnglish: z.string().trim().min(1).max(120),
   guardianName: z.string().trim().min(1).max(120), className: z.string().trim().min(1).max(24),
   age: z.number().int().min(3).max(25), city: z.string().trim().min(1).max(100),
+  address: z.string().trim().max(240).optional(),
   score: z.number().min(0), rank: z.number().int().min(1).max(10),
   resultDate: z.string().date(), photoPath: z.string().nullable().optional()
 });

@@ -8,40 +8,121 @@ import {
   type CandidateInput,
   type Candidate,
 } from "@pathey/types";
+import { ensureHindi, getNameSuggestions } from "@pathey/hindi-text";
+import { Download } from "lucide-react";
 import { Badge, Button, Card, Field } from "@pathey/ui";
-import { adminFetch, downloadAdmin, formatIndia } from "@/lib/api";
+import { adminFetch, downloadAdmin, previewAdmin, formatIndia } from "@/lib/api";
 
 const fieldLabels: Record<keyof CandidateInput, string> = {
   participantId: "Unique participant/reference ID",
   certificateNumber: "Internal certificate number",
   phone: "Mobile number (used to access the certificate)",
-  nameHindi: "Candidate name on certificate (Hindi) — optional, auto-generated from the English name if left blank",
-  nameEnglish: "Candidate name (English/admin)",
+  nameHindi: "Candidate name (Hindi)",
+  nameEnglish: "Candidate name (English)",
   guardianName: "Parent/guardian name on certificate",
   className: "Class on certificate",
   age: "Age on certificate",
   city: "City/district (magazine only)",
+  address: "Full Address",
   score: "Score on certificate",
-  rank: "Rank/position on certificate (1–10)",
-  resultDate: "Date on certificate",
+  rank: "Rank/position on certificate",
+  resultDate: "Serial number / क्रम संख्या (date)",
   photoPath: "Photo path",
 };
-// Shared by the add and edit forms so both ask for exactly the same fields.
-function CandidateFields({ form }: { form: UseFormReturn<CandidateInput> }) {
+
+// English name drives an auto-populated Hindi spelling plus a set of
+// alternate-spelling suggestions to pick from — transliteration is
+// inherently approximate (there's no single "correct" Devanagari spelling
+// for a Roman name), so this offers choices rather than committing to one
+// guess. Auto-fill stops the moment the admin edits Hindi directly or picks
+// a suggestion, so it never silently overwrites a deliberate choice.
+function NameFields({ form }: { form: UseFormReturn<CandidateInput> }) {
+  const [hindiTouched, setHindiTouched] = useState(
+    () => !!form.getValues("nameHindi")?.trim(),
+  );
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const englishName = form.watch("nameEnglish") ?? "";
+  const suggestions = getNameSuggestions(englishName);
+
+  const onEnglishChange = (value: string) => {
+    if (!hindiTouched) {
+      form.setValue("nameHindi", value.trim() ? ensureHindi(value) : "");
+    }
+  };
+  const pickSuggestion = (suggestion: string) => {
+    form.setValue("nameHindi", suggestion, { shouldValidate: true });
+    setHindiTouched(true);
+    setDropdownOpen(false);
+  };
+
+  return (
+    <div className="span-full name-fields">
+      <Field
+        label={fieldLabels.nameEnglish}
+        {...form.register("nameEnglish", {
+          onChange: (e) => onEnglishChange(e.target.value),
+        })}
+        error={form.formState.errors.nameEnglish?.message}
+      />
+      <div className="name-hindi-wrap">
+        <Field
+          label={fieldLabels.nameHindi}
+          autoComplete="off"
+          {...form.register("nameHindi", {
+            onChange: () => setHindiTouched(true),
+            onBlur: () => setDropdownOpen(false),
+          })}
+          onFocus={() => setDropdownOpen(true)}
+          error={form.formState.errors.nameHindi?.message}
+        />
+        {dropdownOpen && suggestions.length > 0 && (
+          <ul className="name-suggestions-dropdown" role="listbox">
+            {suggestions.map((s) => (
+              <li key={s}>
+                <button
+                  type="button"
+                  // onMouseDown (not onClick) fires before the input's blur,
+                  // and preventDefault stops that blur — otherwise the
+                  // dropdown would close from the blur handler above before
+                  // the click ever registers.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pickSuggestion(s);
+                  }}
+                >
+                  {s}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Shared by the add and edit forms. Add generates participantId/certificateNumber
+// server-side (see store.createCandidate), so those two are only shown on Edit,
+// where an existing candidate already has real values worth reviewing.
+function CandidateFields({
+  form,
+  mode,
+}: {
+  form: UseFormReturn<CandidateInput>;
+  mode: "add" | "edit";
+}) {
+  const textFields: (keyof CandidateInput)[] = [
+    ...(mode === "edit" ? (["participantId", "certificateNumber"] as const) : []),
+    "phone",
+    "guardianName",
+    "className",
+    "city",
+    "address",
+  ];
   return (
     <>
-      {(
-        [
-          "participantId",
-          "certificateNumber",
-          "phone",
-          "nameHindi",
-          "nameEnglish",
-          "guardianName",
-          "className",
-          "city",
-        ] as const
-      ).map((k) => (
+      <NameFields form={form} />
+      {textFields.map((k) => (
         <Field
           key={k}
           label={fieldLabels[k]}
@@ -65,7 +146,8 @@ function CandidateFields({ form }: { form: UseFormReturn<CandidateInput> }) {
       />
       <Field
         label={fieldLabels.rank}
-        type="number"
+        type="text"
+        inputMode="numeric"
         {...form.register("rank", { valueAsNumber: true })}
         error={form.formState.errors.rank?.message}
       />
@@ -84,6 +166,23 @@ export function CycleWorkspace({ id }: { id: string }) {
     [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Candidate | null>(null);
+  const [previewing, setPreviewing] = useState<Candidate | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const openPreview = async (p: Candidate) => {
+    setPreviewing(p);
+    setPreviewError("");
+    try {
+      setPreviewUrl(await previewAdmin(`/admin/candidates/${p.id}/certificate-preview`));
+    } catch (e) {
+      setPreviewError((e as Error).message);
+    }
+  };
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewing(null);
+    setPreviewUrl(null);
+  };
   const cycle = useQuery({
       queryKey: ["cycle", id],
       queryFn: () => adminFetch<any>(`/admin/cycles/${id}`),
@@ -286,12 +385,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                       <div className="actions">
                         <button
                           className="btn btn-secondary"
-                          onClick={() =>
-                            downloadAdmin(
-                              `/admin/candidates/${p.id}/certificate-preview`,
-                              `${p.certificateNumber}.pdf`,
-                            )
-                          }
+                          onClick={() => openPreview(p)}
                         >
                           Preview
                         </button>
@@ -308,6 +402,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                               className: p.className,
                               age: p.age,
                               city: p.city,
+                              address: p.address,
                               score: p.score,
                               rank: p.rank,
                               resultDate: p.resultDate,
@@ -329,25 +424,27 @@ export function CycleWorkspace({ id }: { id: string }) {
       </Card>
       {adding && (
         <div className="modal-backdrop">
-          <div className="modal">
+          <div className="modal modal--wide">
             <h2>Add candidate</h2>
             <p>
               The approved certificate prints the Hindi name, guardian name,
-              class, age, rank, score and date. City and the English name are
-              used for the magazine and administration only.
+              class, age, rank, score and date. The Hindi name is suggested
+              automatically from the English name — review and adjust if
+              needed. City and the English name are used for the magazine
+              and administration only.
             </p>
             <form
               className="form-grid"
               onSubmit={addForm.handleSubmit((v) => create.mutate(v))}
             >
-              <CandidateFields form={addForm} />
+              <CandidateFields form={addForm} mode="add" />
               {create.error && (
-                <p className="notice notice-danger span-2">
+                <p className="notice notice-danger span-full">
                   {create.error.message}
                 </p>
               )}
               <div
-                className="actions span-2"
+                className="actions span-full"
                 style={{ justifyContent: "flex-end" }}
               >
                 <Button
@@ -367,25 +464,27 @@ export function CycleWorkspace({ id }: { id: string }) {
       )}
       {editing && (
         <div className="modal-backdrop">
-          <div className="modal">
+          <div className="modal modal--wide">
             <h2>Edit candidate</h2>
             <p>
               The approved certificate prints the Hindi name, guardian name,
-              class, age, rank, score and date. City and the English name are
-              used for the magazine and administration only.
+              class, age, rank, score and date. The Hindi name is suggested
+              automatically from the English name — review and adjust if
+              needed. City and the English name are used for the magazine
+              and administration only.
             </p>
             <form
               className="form-grid"
               onSubmit={editForm.handleSubmit((v) => edit.mutate(v))}
             >
-              <CandidateFields form={editForm} />
+              <CandidateFields form={editForm} mode="edit" />
               {edit.error && (
-                <p className="notice notice-danger span-2">
+                <p className="notice notice-danger span-full">
                   {edit.error.message}
                 </p>
               )}
               <div
-                className="actions span-2"
+                className="actions span-full"
                 style={{ justifyContent: "flex-end" }}
               >
                 <Button
@@ -400,6 +499,52 @@ export function CycleWorkspace({ id }: { id: string }) {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {previewing && (
+        <div className="modal-backdrop" onMouseDown={closePreview}>
+          <div
+            className="modal modal--wide"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2>Certificate preview</h2>
+            <p>
+              <strong>{previewing.nameHindi || previewing.nameEnglish}</strong>{" "}
+              · {previewing.certificateNumber}
+            </p>
+            {previewError ? (
+              <p className="notice notice-danger">{previewError}</p>
+            ) : previewUrl ? (
+              <iframe
+                className="pdf-frame"
+                title="Certificate preview"
+                src={previewUrl}
+              />
+            ) : (
+              <p>Loading preview…</p>
+            )}
+            <div
+              className="actions"
+              style={{ marginTop: 16, justifyContent: "flex-end" }}
+            >
+              <Button type="button" variant="secondary" onClick={closePreview}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                disabled={!previewUrl}
+                onClick={() =>
+                  downloadAdmin(
+                    `/admin/candidates/${previewing.id}/certificate-preview`,
+                    `${previewing.certificateNumber}.pdf`,
+                  )
+                }
+              >
+                <Download size={18} />
+                Download certificate
+              </Button>
+            </div>
           </div>
         </div>
       )}

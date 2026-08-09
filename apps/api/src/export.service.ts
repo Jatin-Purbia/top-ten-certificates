@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Candidate, ResultCycle } from "@pathey/types";
 import { sanitizeFilename } from "./domain.js";
-import { ensureHindi } from "./hindi-text.js";
+import { ensureHindi } from "@pathey/hindi-text";
 
 const assetPath = (relativePath: string) => {
   const choices = [
@@ -242,6 +242,6 @@ export class ExportService {
     return collect(doc);
   }
   filename(candidate: Candidate) {
-    return `${sanitizeFilename(candidate.nameEnglish)}-${sanitizeFilename(candidate.certificateNumber)}.pdf`;
+    return `${sanitizeFilename(candidate.nameEnglish)}-${sanitizeFilename(candidate.certificateNumber ?? candidate.id)}.pdf`;
   }
 }

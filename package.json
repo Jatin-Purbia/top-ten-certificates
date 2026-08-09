@@ -6,7 +6,7 @@
   "engines": { "node": ">=20.11" },
   "scripts": {
     "dev": "concurrently -n api,web,warm -c cyan,orange,green \"npm run dev -w @pathey/api\" \"npm run dev -w @pathey/web\" \"node scripts/warm-dev.mjs\"",
-    "build": "npm run build -w @pathey/types && npm run build -w @pathey/api && npm run build -w @pathey/web",
+    "build": "npm run build -w @pathey/types && npm run build -w @pathey/hindi-text && npm run build -w @pathey/api && npm run build -w @pathey/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test -w @pathey/api",

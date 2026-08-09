@@ -28,7 +28,7 @@ import {
 import { z } from "zod";
 import { Store } from "./store.js";
 import { ExportService } from "./export.service.js";
-import { ensureHindi } from "./hindi-text.js";
+import { ensureHindi } from "@pathey/hindi-text";
 import {
   ClaimRateLimiter,
   Public,
@@ -463,7 +463,7 @@ export class AdminController {
           })),
         });
     });
-    const participantIds = parsed.map((r) => r.participantId.toLowerCase()),
+    const participantIds = parsed.map((r) => (r.participantId ?? "").toLowerCase()),
       ranks = parsed.map((r) => r.rank);
     for (const [value, count] of [...new Set(participantIds)].map(
       (x) => [x, participantIds.filter((y) => y === x).length] as const,
