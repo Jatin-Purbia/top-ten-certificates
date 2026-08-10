@@ -1,165 +1,17 @@
 "use client";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm, type UseFormReturn } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   candidateInputSchema,
   type CandidateInput,
   type Candidate,
 } from "@pathey/types";
-import { ensureHindi, getNameSuggestions } from "@pathey/hindi-text";
 import { Download } from "lucide-react";
-import { Badge, Button, Card, Field, useConfirm } from "@pathey/ui";
+import { Badge, Button, Card, useConfirm } from "@pathey/ui";
 import { adminFetch, downloadAdmin, previewAdmin, formatIndia } from "@/lib/api";
-
-const fieldLabels: Record<keyof CandidateInput, string> = {
-  participantId: "Serial number / क्रमांक संख्या",
-  certificateNumber: "Internal certificate number",
-  phone: "Mobile number (used to access the certificate)",
-  nameHindi: "Candidate name (Hindi)",
-  nameEnglish: "Candidate name (English)",
-  guardianName: "Parent/guardian name on certificate",
-  className: "Class on certificate",
-  age: "Age on certificate",
-  city: "City/district (magazine only)",
-  address: "Full Address",
-  score: "Score on certificate",
-  rank: "Rank/position on certificate",
-  resultDate: "Date on certificate",
-  photoPath: "Photo path",
-};
-
-// English name drives an auto-populated Hindi spelling plus a set of
-// alternate-spelling suggestions to pick from — transliteration is
-// inherently approximate (there's no single "correct" Devanagari spelling
-// for a Roman name), so this offers choices rather than committing to one
-// guess. Auto-fill stops the moment the admin edits Hindi directly or picks
-// a suggestion, so it never silently overwrites a deliberate choice.
-function NameFields({ form }: { form: UseFormReturn<CandidateInput> }) {
-  const [hindiTouched, setHindiTouched] = useState(
-    () => !!form.getValues("nameHindi")?.trim(),
-  );
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const englishName = form.watch("nameEnglish") ?? "";
-  const suggestions = getNameSuggestions(englishName);
-
-  const onEnglishChange = (value: string) => {
-    if (!hindiTouched) {
-      form.setValue("nameHindi", value.trim() ? ensureHindi(value) : "");
-    }
-  };
-  const pickSuggestion = (suggestion: string) => {
-    form.setValue("nameHindi", suggestion, { shouldValidate: true });
-    setHindiTouched(true);
-    setDropdownOpen(false);
-  };
-
-  return (
-    <div className="span-full name-fields">
-      <Field
-        label={fieldLabels.nameEnglish}
-        {...form.register("nameEnglish", {
-          onChange: (e) => onEnglishChange(e.target.value),
-        })}
-        error={form.formState.errors.nameEnglish?.message}
-      />
-      <div className="name-hindi-wrap">
-        <Field
-          label={fieldLabels.nameHindi}
-          autoComplete="off"
-          {...form.register("nameHindi", {
-            onChange: () => setHindiTouched(true),
-            onBlur: () => setDropdownOpen(false),
-          })}
-          onFocus={() => setDropdownOpen(true)}
-          error={form.formState.errors.nameHindi?.message}
-        />
-        {dropdownOpen && suggestions.length > 0 && (
-          <ul className="name-suggestions-dropdown" role="listbox">
-            {suggestions.map((s) => (
-              <li key={s}>
-                <button
-                  type="button"
-                  // onMouseDown (not onClick) fires before the input's blur,
-                  // and preventDefault stops that blur — otherwise the
-                  // dropdown would close from the blur handler above before
-                  // the click ever registers.
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    pickSuggestion(s);
-                  }}
-                >
-                  {s}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Shared by the add and edit forms. Add generates participantId/certificateNumber
-// server-side (see store.createCandidate), so those two are only shown on Edit,
-// where an existing candidate already has real values worth reviewing.
-function CandidateFields({
-  form,
-  mode,
-}: {
-  form: UseFormReturn<CandidateInput>;
-  mode: "add" | "edit";
-}) {
-  const textFields: (keyof CandidateInput)[] = [
-    ...(mode === "edit" ? (["participantId", "certificateNumber"] as const) : []),
-    "phone",
-    "guardianName",
-    "className",
-    "city",
-    "address",
-  ];
-  return (
-    <>
-      <NameFields form={form} />
-      {textFields.map((k) => (
-        <Field
-          key={k}
-          label={fieldLabels[k]}
-          type={k === "phone" ? "tel" : undefined}
-          {...form.register(k)}
-          error={form.formState.errors[k]?.message}
-        />
-      ))}
-      <Field
-        label={fieldLabels.age}
-        type="number"
-        {...form.register("age", { valueAsNumber: true })}
-        error={form.formState.errors.age?.message}
-      />
-      <Field
-        label={fieldLabels.score}
-        type="number"
-        step="0.01"
-        {...form.register("score", { valueAsNumber: true })}
-        error={form.formState.errors.score?.message}
-      />
-      <Field
-        label={fieldLabels.rank}
-        type="text"
-        inputMode="numeric"
-        {...form.register("rank", { valueAsNumber: true })}
-        error={form.formState.errors.rank?.message}
-      />
-      <Field
-        label={fieldLabels.resultDate}
-        type="date"
-        {...form.register("resultDate")}
-        error={form.formState.errors.resultDate?.message}
-      />
-    </>
-  );
-}
+import { CandidateFields, candidateToFormValues } from "./candidate-fields";
 
 export function CycleWorkspace({ id }: { id: string }) {
   const qc = useQueryClient(),
@@ -365,10 +217,14 @@ export function CycleWorkspace({ id }: { id: string }) {
                     </td>
                     <td>
                       {p.nameHindi}
-                      <br />
-                      <span style={{ color: "var(--muted)" }}>
-                        {p.nameEnglish}
-                      </span>
+                      {p.nameEnglish && p.nameEnglish !== p.nameHindi && (
+                        <>
+                          <br />
+                          <span style={{ color: "var(--muted)" }}>
+                            {p.nameEnglish}
+                          </span>
+                        </>
+                      )}
                     </td>
                     <td>{p.participantId}</td>
                     <td>{p.phone}</td>
@@ -395,22 +251,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                         <button
                           className="btn btn-secondary"
                           onClick={() => {
-                            editForm.reset({
-                              participantId: p.participantId,
-                              certificateNumber: p.certificateNumber,
-                              phone: p.phone,
-                              nameHindi: p.nameHindi,
-                              nameEnglish: p.nameEnglish,
-                              guardianName: p.guardianName,
-                              className: p.className,
-                              age: p.age,
-                              city: p.city,
-                              address: p.address,
-                              score: p.score,
-                              rank: p.rank,
-                              resultDate: p.resultDate,
-                              photoPath: p.photoPath,
-                            });
+                            editForm.reset(candidateToFormValues(p));
                             setEditing(p);
                           }}
                         >

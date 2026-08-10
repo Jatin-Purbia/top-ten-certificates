@@ -463,21 +463,7 @@ export class AdminController {
           })),
         });
     });
-    const participantIds = parsed.map((r) => (r.participantId ?? "").toLowerCase()),
-      ranks = parsed.map((r) => r.rank);
-    for (const [value, count] of [...new Set(participantIds)].map(
-      (x) => [x, participantIds.filter((y) => y === x).length] as const,
-    ))
-      if (count > 1)
-        errors.push({
-          row: 0,
-          issues: [
-            {
-              field: "participantId",
-              message: `Duplicate participant ID: ${value}`,
-            },
-          ],
-        });
+    const ranks = parsed.map((r) => r.rank);
     for (const value of new Set(ranks))
       if (ranks.filter((x) => x === value).length > 1)
         errors.push({

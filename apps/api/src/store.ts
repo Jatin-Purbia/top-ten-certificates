@@ -110,7 +110,6 @@ export class Store implements OnModuleInit {
       db.collection("result_cycles").createIndex({ publicSlug: 1 }, { unique: true }),
       db.collection("result_cycles").createIndex({ status: 1, expiresAt: 1 }),
       db.collection("candidates").createIndex({ cycleId: 1 }),
-      db.collection("candidates").createIndex({ cycleId: 1, participantId: 1 }, { unique: true }),
       db.collection("candidates").createIndex({ cycleId: 1, rank: 1 }, { unique: true }),
       db.collection("candidates").createIndex({ cycleId: 1, certificateNumber: 1 }, { unique: true }),
       db.collection("candidates").createIndex({ cycleId: 1, phone: 1 }, { unique: true }),
@@ -503,9 +502,7 @@ export class Store implements OnModuleInit {
         this.candidates.some(
           (c) =>
             c.cycleId === cycleId &&
-            (c.rank === item.rank ||
-              c.participantId === item.participantId ||
-              c.phone === item.phone),
+            (c.rank === item.rank || c.phone === item.phone),
         )
       )
         throw new Error("DUPLICATE_CANDIDATE");
@@ -519,7 +516,6 @@ export class Store implements OnModuleInit {
     const existing = await this.listCandidates(cycleId);
     const all = [
       ...existing.map((c) => ({
-        participantId: c.participantId,
         phone: c.phone,
         rank: c.rank,
       })),
@@ -527,10 +523,6 @@ export class Store implements OnModuleInit {
     ];
     if (new Set(all.map((x) => x.rank)).size !== all.length)
       throw new Error("DUPLICATE_RANK");
-    if (
-      new Set(all.map((x) => (x.participantId ?? "").toLowerCase())).size !== all.length
-    )
-      throw new Error("DUPLICATE_PARTICIPANT_ID");
     if (new Set(all.map((x) => x.phone)).size !== all.length)
       throw new Error("DUPLICATE_PHONE");
     const generated: { candidate: Candidate }[] = [];

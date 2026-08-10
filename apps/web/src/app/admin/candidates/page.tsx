@@ -1,10 +1,17 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Card } from '@pathey/ui';
-import { adminFetch, formatIndia } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { candidateInputSchema, type CandidateInput, type Candidate } from '@pathey/types';
+import { Badge, Button, Card } from '@pathey/ui';
+import { adminFetch } from '@/lib/api';
+import { CandidateFields, candidateToFormValues } from '@/components/candidate-fields';
 
 export default function Candidates() {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<Candidate | null>(null);
   const cycles = useQuery({
     queryKey: ['cycles-for-candidates'],
     queryFn: () => adminFetch<any>('/admin/cycles?pageSize=100'),
@@ -37,12 +44,31 @@ export default function Candidates() {
   const error = cycles.error ?? candidates.error;
   const rows = candidates.data ?? [];
 
+  const editForm = useForm<CandidateInput>({
+    resolver: zodResolver(candidateInputSchema),
+  });
+  const update = useMutation<any, Error, CandidateInput>({
+    mutationFn: (v: CandidateInput) =>
+      adminFetch<any>(`/admin/candidates/${editing!.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(v),
+      }),
+    onSuccess: () => {
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ['all-candidates', cycleIds] });
+    },
+  });
+  const openEdit = (p: Candidate) => {
+    editForm.reset(candidateToFormValues(p));
+    setEditing(p);
+  };
+
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Candidate management</h1>
-          <p>All candidates across every result cycle. Open a cycle to add, edit, preview, or manage claim credentials.</p>
+          <p>All candidates across every result cycle. Edit here, or open a cycle to add, import, preview, or manage claim credentials.</p>
         </div>
       </div>
       <Card>
@@ -66,15 +92,19 @@ export default function Candidates() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p: any) => (
+                {rows.map((p: Candidate & { cycleId: string; cycleTitle: string; cycleResultNumber: string; cycleStatus: string }) => (
                   <tr key={p.id}>
                     <td>
                       <strong>#{p.rank}</strong>
                     </td>
                     <td>
                       {p.nameHindi || p.nameEnglish}
-                      <br />
-                      <span style={{ color: 'var(--muted)' }}>{p.nameEnglish}</span>
+                      {p.nameEnglish && p.nameEnglish !== p.nameHindi && (
+                        <>
+                          <br />
+                          <span style={{ color: 'var(--muted)' }}>{p.nameEnglish}</span>
+                        </>
+                      )}
                     </td>
                     <td>
                       {p.cycleTitle} · {p.cycleResultNumber}
@@ -94,9 +124,14 @@ export default function Candidates() {
                       )}
                     </td>
                     <td>
-                      <Link className="btn btn-secondary" href={`/admin/cycles/${p.cycleId}`}>
-                        Manage
-                      </Link>
+                      <div className="actions">
+                        <button className="btn btn-secondary" onClick={() => openEdit(p)}>
+                          Edit
+                        </button>
+                        <Link className="btn btn-secondary" href={`/admin/cycles/${p.cycleId}`}>
+                          Manage
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -105,6 +140,43 @@ export default function Candidates() {
           </div>
         )}
       </Card>
+      {editing && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setEditing(null);
+          }}
+        >
+          <div className="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="edit-candidate-title">
+            <h2 id="edit-candidate-title">Edit candidate</h2>
+            <p>
+              The approved certificate prints the Hindi name, guardian name,
+              class, age, rank, score and date. The Hindi name is suggested
+              automatically from the English name — review and adjust if
+              needed. City and the English name are used for the magazine
+              and administration only.
+            </p>
+            <form
+              className="form-grid"
+              onSubmit={editForm.handleSubmit((v) => update.mutate(v))}
+            >
+              <CandidateFields form={editForm} mode="edit" />
+              {update.error && (
+                <p className="notice notice-danger span-full">{update.error.message}</p>
+              )}
+              <div className="actions span-full" style={{ justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={update.isPending}>
+                  {update.isPending ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

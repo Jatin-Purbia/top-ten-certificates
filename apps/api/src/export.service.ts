@@ -114,8 +114,8 @@ const CERTIFICATE_FIELDS: Record<string, FitField> = {
   // "क्रमांक-" ends at x=942px, "(अंक" starts at x=1043px (gap 101px);
   // "(अंक" ends at x=1114px, the closing ")" starts at x=1401px (gap 287px),
   // in the template's 1600x1133px source, scaled to the 841.89x595.28pt page.
-  resultNumber: { centerX: 522, centerY: 300, maxWidth: 48, maxSize: 17, minSize: 9 },
-  score: { centerX: 662, centerY: 300, maxWidth: 145, maxSize: 17, minSize: 9 },
+  resultNumber: { centerX: 522, centerY: 294, maxWidth: 48, maxSize: 17, minSize: 9 },
+  score: { centerX: 662, centerY: 294, maxWidth: 145, maxSize: 17, minSize: 9 },
   // 21pt matches the printed template's own text: measured the ink-height of
   // "में श्री/सुश्री ... पुत्र/पुत्री श्री" directly from certificate-demo.jpeg
   // (~47px at the template's 1600x1133 resolution, ~24.5pt once scaled to the

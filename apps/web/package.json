@@ -2,7 +2,7 @@
   "name": "@pathey/web",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "dev": "next dev -p 3000", "build": "next build", "start": "next start -p 3000", "typecheck": "tsc --noEmit", "lint": "eslint . --max-warnings=0", "postinstall": "cd ../.. && npm ci --ignore-scripts --no-audit --silent || true" },
+  "scripts": { "dev": "next dev -p 3000", "build": "npm run build -w @pathey/types -w @pathey/hindi-text && next build", "start": "next start -p 3000", "typecheck": "tsc --noEmit", "lint": "eslint . --max-warnings=0" },
   "dependencies": {
     "@hookform/resolvers": "5.7.1",
     "@pathey/hindi-text": "file:../../packages/hindi-text",

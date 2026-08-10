@@ -11,3 +11,6 @@ test-results/
 .DS_Store
 .turbo/
 tmp/
+
+.vercel
+.env*
