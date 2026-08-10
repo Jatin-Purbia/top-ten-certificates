@@ -27,8 +27,7 @@ export function CertificatePreviewModal({
       <div className="modal modal--wide" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Certificate preview</h2>
         <p>
-          <strong>{candidate.nameHindi || candidate.nameEnglish}</strong>{" "}
-          · {candidate.certificateNumber}
+          <strong>{candidate.nameHindi || candidate.nameEnglish}</strong>
         </p>
         {previewError ? (
           <p className="notice notice-danger">{previewError}</p>

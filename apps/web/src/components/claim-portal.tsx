@@ -221,14 +221,14 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
               >
                 {available.map((item) => (
                   <option value={item.slug} key={item.slug}>
-                    {item.title} · Result {item.resultNumber}
+                    {item.title}
                   </option>
                 ))}
               </select>
             </label>
           )}
           <p>
-            <strong>{current.title}</strong> · Result {current.resultNumber}
+            <strong>{current.title}</strong>
             {" · "}Download by <strong>{formatIndia(current.expiresAt)}</strong>
           </p>
         </div>
