@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { candidateInputSchema, type CandidateInput, type Candidate } from '@pathey/types';
-import { Download } from 'lucide-react';
 import { Badge, Button, Card } from '@pathey/ui';
-import { adminFetch, downloadAdmin, previewAdmin } from '@/lib/api';
+import { adminFetch, previewAdmin } from '@/lib/api';
 import { CandidateFields, candidateToFormValues } from '@/components/candidate-fields';
+import { CertificatePreviewModal } from '@/components/certificate-preview-modal';
 
 export default function Candidates() {
   const qc = useQueryClient();
@@ -192,40 +192,12 @@ export default function Candidates() {
         </div>
       )}
       {previewing && (
-        <div className="modal-backdrop" onMouseDown={closePreview}>
-          <div className="modal modal--wide" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>Certificate preview</h2>
-            <p>
-              <strong>{previewing.nameHindi || previewing.nameEnglish}</strong>{' '}
-              · {previewing.certificateNumber}
-            </p>
-            {previewError ? (
-              <p className="notice notice-danger">{previewError}</p>
-            ) : previewUrl ? (
-              <iframe className="pdf-frame" title="Certificate preview" src={previewUrl} />
-            ) : (
-              <p>Loading preview…</p>
-            )}
-            <div className="actions" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
-              <Button type="button" variant="secondary" onClick={closePreview}>
-                Close
-              </Button>
-              <Button
-                type="button"
-                disabled={!previewUrl}
-                onClick={() =>
-                  downloadAdmin(
-                    `/admin/candidates/${previewing.id}/certificate-preview`,
-                    `${previewing.certificateNumber}.pdf`,
-                  )
-                }
-              >
-                <Download size={18} />
-                Download certificate
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CertificatePreviewModal
+          candidate={previewing}
+          previewUrl={previewUrl}
+          previewError={previewError}
+          onClose={closePreview}
+        />
       )}
     </>
   );
