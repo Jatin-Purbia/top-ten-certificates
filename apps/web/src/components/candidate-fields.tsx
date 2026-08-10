@@ -117,7 +117,7 @@ function HindiSuggestField({
   label,
 }: {
   form: UseFormReturn<CandidateInput>;
-  name: "guardianName" | "city" | "address";
+  name: "guardianName" | "address";
   label: string;
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -187,7 +187,6 @@ export function CandidateFields({
         />
       ))}
       <HindiSuggestField form={form} name="guardianName" label={fieldLabels.guardianName} />
-      <HindiSuggestField form={form} name="city" label={fieldLabels.city} />
       <HindiSuggestField form={form} name="address" label={fieldLabels.address} />
       <Field
         label={fieldLabels.age}

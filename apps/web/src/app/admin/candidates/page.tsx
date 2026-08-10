@@ -152,10 +152,8 @@ export default function Candidates() {
             <h2 id="edit-candidate-title">Edit candidate</h2>
             <p>
               The approved certificate prints the Hindi name, guardian name,
-              class, age, rank, score and date. The Hindi name is suggested
-              automatically from the English name — review and adjust if
-              needed. City and the English name are used for the magazine
-              and administration only.
+              class, age, rank, score and date. Type Roman letters into any
+              Hindi field to pick a suggested spelling.
             </p>
             <form
               className="form-grid"

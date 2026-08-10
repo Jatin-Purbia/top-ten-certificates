@@ -22,7 +22,7 @@ export const candidateInputSchema = z.object({
   phone: phoneSchema,
   nameHindi: z.string().trim().max(120).optional(), nameEnglish: z.string().trim().min(1).max(120),
   guardianName: z.string().trim().min(1).max(120), className: z.string().trim().min(1).max(24),
-  age: z.number().int().min(3).max(25), city: z.string().trim().min(1).max(100),
+  age: z.number().int().min(3).max(25), city: z.string().trim().max(100).optional(),
   address: z.string().trim().max(240).optional(),
   score: z.number().min(0), rank: z.number().int().min(1).max(10),
   resultDate: z.string().date(), photoPath: z.string().nullable().optional()

@@ -203,7 +203,6 @@ export function CycleWorkspace({ id }: { id: string }) {
                   <th>Candidate</th>
                   <th>Reference ID</th>
                   <th>Mobile</th>
-                  <th>City</th>
                   <th>Score</th>
                   <th>Download</th>
                   <th />
@@ -228,7 +227,6 @@ export function CycleWorkspace({ id }: { id: string }) {
                     </td>
                     <td>{p.participantId}</td>
                     <td>{p.phone}</td>
-                    <td>{p.city}</td>
                     <td>{p.score}</td>
                     <td>
                       {p.downloadCount ? (
@@ -272,10 +270,8 @@ export function CycleWorkspace({ id }: { id: string }) {
             <h2>Add candidate</h2>
             <p>
               The approved certificate prints the Hindi name, guardian name,
-              class, age, rank, score and date. The Hindi name is suggested
-              automatically from the English name — review and adjust if
-              needed. City and the English name are used for the magazine
-              and administration only.
+              class, age, rank, score and date. Type Roman letters into any
+              Hindi field to pick a suggested spelling.
             </p>
             <form
               className="form-grid"
@@ -312,10 +308,8 @@ export function CycleWorkspace({ id }: { id: string }) {
             <h2>Edit candidate</h2>
             <p>
               The approved certificate prints the Hindi name, guardian name,
-              class, age, rank, score and date. The Hindi name is suggested
-              automatically from the English name — review and adjust if
-              needed. City and the English name are used for the magazine
-              and administration only.
+              class, age, rank, score and date. Type Roman letters into any
+              Hindi field to pick a suggested spelling.
             </p>
             <form
               className="form-grid"
