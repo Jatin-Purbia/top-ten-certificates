@@ -38,7 +38,7 @@ test('complete certificate lifecycle is private, time-bound, and purgeable', asy
     nameHindi: `परीक्षण विद्यार्थी ${index + 1}`,
     nameEnglish: `Test Student ${index + 1}`,
     guardianName: 'Demo Guardian',
-    className: '6', age: 11, city: 'जयपुर', score: 100 - index, rank: index + 1,
+    className: '6', age: 11, city: 'जयपुर', score: String(100 - index), rank: index + 1,
     resultDate: new Date().toISOString().slice(0, 10), photoPath: null,
   }));
   const validate = await request.post(`${api}/admin/cycles/${cycle.id}/candidates/import/validate`, { headers: adminHeaders, data: { rows } });

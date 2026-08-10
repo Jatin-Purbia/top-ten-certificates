@@ -65,7 +65,11 @@ const production = process.env.NODE_ENV === "production";
 // over http on the same site (just a different port), where SameSite=None
 // without Secure would be rejected outright, so dev keeps the stricter
 // same-site policy instead.
-const claimCookieSameSite: "none" | "strict" = production ? "none" : "strict";
+// "Strict" blocks the cookie on things like the certificate-preview
+// <iframe> load, which isn't a genuine cross-site request in dev — the
+// download endpoint already carries its own x-claim-csrf token, so "Lax"
+// costs no real security here and avoids that class of false rejection.
+const claimCookieSameSite: "none" | "lax" = production ? "none" : "lax";
 const cookieOptions = (maxAge: number) => ({
   httpOnly: true,
   secure: production,

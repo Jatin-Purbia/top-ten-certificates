@@ -20,7 +20,7 @@ export const fieldLabels: Record<keyof CandidateInput, string> = {
   age: "Age on certificate",
   city: "City/district (magazine only)",
   address: "Full Address",
-  score: "Score on certificate",
+  score: "Score / अंक",
   rank: "Rank/position on certificate",
   resultDate: "Date on certificate",
   photoPath: "Photo path",
@@ -196,9 +196,8 @@ export function CandidateFields({
       />
       <Field
         label={fieldLabels.score}
-        type="number"
-        step="0.01"
-        {...form.register("score", { valueAsNumber: true })}
+        type="text"
+        {...form.register("score")}
         error={form.formState.errors.score?.message}
       />
       <Field

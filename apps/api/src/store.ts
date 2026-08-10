@@ -204,7 +204,7 @@ export class Store implements OnModuleInit {
         className: `${5 + (i % 3)}`,
         age: 10 + (i % 3),
         city: ["जयपुर", "अजमेर", "कोटा", "जोधपुर", "उदयपुर"][i % 5]!,
-        score: 100 - i,
+        score: String(100 - i),
         rank: i + 1,
         resultDate: published.publicationAt.slice(0, 10),
         photoPath: null,
