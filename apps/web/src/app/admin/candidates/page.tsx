@@ -1,17 +1,34 @@
 'use client';
 import { useState } from 'react';
-import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { candidateInputSchema, type CandidateInput, type Candidate } from '@pathey/types';
+import { Download } from 'lucide-react';
 import { Badge, Button, Card } from '@pathey/ui';
-import { adminFetch } from '@/lib/api';
+import { adminFetch, downloadAdmin, previewAdmin } from '@/lib/api';
 import { CandidateFields, candidateToFormValues } from '@/components/candidate-fields';
 
 export default function Candidates() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Candidate | null>(null);
+  const [previewing, setPreviewing] = useState<Candidate | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const openPreview = async (p: Candidate) => {
+    setPreviewing(p);
+    setPreviewError('');
+    try {
+      setPreviewUrl(await previewAdmin(`/admin/candidates/${p.id}/certificate-preview`));
+    } catch (e) {
+      setPreviewError((e as Error).message);
+    }
+  };
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewing(null);
+    setPreviewUrl(null);
+  };
   const cycles = useQuery({
     queryKey: ['cycles-for-candidates'],
     queryFn: () => adminFetch<any>('/admin/cycles?pageSize=100'),
@@ -30,7 +47,6 @@ export default function Candidates() {
             r.data.map((candidate: any) => ({
               ...candidate,
               cycleTitle: c.title,
-              cycleResultNumber: c.resultNumber,
               cycleStatus: c.status,
             })),
           ),
@@ -86,13 +102,14 @@ export default function Candidates() {
                   <th>Rank</th>
                   <th>Candidate</th>
                   <th>Cycle</th>
+                  <th>Status</th>
                   <th>Mobile</th>
                   <th>Download</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p: Candidate & { cycleId: string; cycleTitle: string; cycleResultNumber: string; cycleStatus: string }) => (
+                {rows.map((p: Candidate & { cycleId: string; cycleTitle: string; cycleStatus: string }) => (
                   <tr key={p.id}>
                     <td>
                       <strong>#{p.rank}</strong>
@@ -106,9 +123,8 @@ export default function Candidates() {
                         </>
                       )}
                     </td>
+                    <td>{p.cycleTitle}</td>
                     <td>
-                      {p.cycleTitle} · {p.cycleResultNumber}
-                      <br />
                       <Badge tone={p.cycleStatus === 'published' ? 'success' : 'warning'}>
                         {p.cycleStatus}
                       </Badge>
@@ -128,9 +144,9 @@ export default function Candidates() {
                         <button className="btn btn-secondary" onClick={() => openEdit(p)}>
                           Edit
                         </button>
-                        <Link className="btn btn-secondary" href={`/admin/cycles/${p.cycleId}`}>
-                          Manage
-                        </Link>
+                        <button className="btn btn-secondary" onClick={() => openPreview(p)}>
+                          Preview
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -172,6 +188,42 @@ export default function Candidates() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {previewing && (
+        <div className="modal-backdrop" onMouseDown={closePreview}>
+          <div className="modal modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+            <h2>Certificate preview</h2>
+            <p>
+              <strong>{previewing.nameHindi || previewing.nameEnglish}</strong>{' '}
+              · {previewing.certificateNumber}
+            </p>
+            {previewError ? (
+              <p className="notice notice-danger">{previewError}</p>
+            ) : previewUrl ? (
+              <iframe className="pdf-frame" title="Certificate preview" src={previewUrl} />
+            ) : (
+              <p>Loading preview…</p>
+            )}
+            <div className="actions" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
+              <Button type="button" variant="secondary" onClick={closePreview}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                disabled={!previewUrl}
+                onClick={() =>
+                  downloadAdmin(
+                    `/admin/candidates/${previewing.id}/certificate-preview`,
+                    `${previewing.certificateNumber}.pdf`,
+                  )
+                }
+              >
+                <Download size={18} />
+                Download certificate
+              </Button>
+            </div>
           </div>
         </div>
       )}

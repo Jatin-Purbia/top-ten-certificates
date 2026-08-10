@@ -248,10 +248,27 @@ export class Store implements OnModuleInit {
         const rx = new RegExp(escapeRegex(search), "i");
         filter.$or = [{ title: rx }, { resultNumber: rx }];
       }
-      return this.col("result_cycles")
+      const cycles = (await this.col("result_cycles")
         .find(filter, noId)
         .sort({ publicationAt: -1 })
-        .toArray() as unknown as Promise<ResultCycle[]>;
+        .toArray()) as unknown as ResultCycle[];
+      // The stored candidateCount field is only ever kept in sync by the
+      // demo in-memory store (createCandidate/deleteCandidate mutate it
+      // directly there) — the real Mongo path inserts/removes candidate
+      // documents without touching it, so it stays frozen at 0 forever.
+      // Counting the candidates collection live avoids depending on a
+      // counter nothing actually maintains.
+      const counts = await this.col("candidates")
+        .aggregate([
+          { $match: { cycleId: { $in: cycles.map((c) => c.id) } } },
+          { $group: { _id: "$cycleId", count: { $sum: 1 } } },
+        ])
+        .toArray();
+      const countByCycle = new Map(counts.map((c) => [c._id as string, c.count as number]));
+      return cycles.map((c) => ({
+        ...c,
+        candidateCount: countByCycle.get(c.id) ?? 0,
+      }));
     }
     return this.cycles
       .filter(

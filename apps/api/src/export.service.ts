@@ -97,11 +97,11 @@ const drawFitted = (
     stroke: true,
   });
 };
-// rank is schema-constrained to 1–10 (candidateInputSchema), so a fixed
-// lookup is safe — the source result sheets print rank as Roman numerals
-// (I–X), and the certificate matches that instead of Arabic numerals.
-const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
-const toRomanRank = (rank: number) => ROMAN_NUMERALS[rank - 1] ?? String(rank);
+// rank is schema-constrained to 1–10 (candidateInputSchema). Only the top 5
+// print as Hindi ordinal words on the certificate; anything past that just
+// prints a dash rather than a numeral.
+const HINDI_ORDINALS = ["प्रथम", "द्वितीय", "तृतीय", "चतुर्थ", "पंचम"];
+const formatRank = (rank: number) => HINDI_ORDINALS[rank - 1] ?? "-";
 // Field centers were measured directly from assets/certificate-demo.jpeg's
 // printed blanks/underlines (in template pixels, converted to the 841.89x595.28pt
 // page PDFKit renders it at) so text sits on the pre-printed lines regardless
@@ -163,7 +163,7 @@ export class ExportService {
     drawFitted(doc, ensureHindi(candidate.guardianName), CERTIFICATE_FIELDS.guardianName!);
     drawFitted(doc, ensureHindi(candidate.className), CERTIFICATE_FIELDS.className!);
     drawFitted(doc, String(candidate.age), CERTIFICATE_FIELDS.age!);
-    drawFitted(doc, toRomanRank(candidate.rank), CERTIFICATE_FIELDS.rank!);
+    drawFitted(doc, formatRank(candidate.rank), CERTIFICATE_FIELDS.rank!);
     doc
       .fontSize(12)
       .fillColor("#08214A")

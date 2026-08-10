@@ -132,10 +132,6 @@ export default function Cycles() {
                   <tr key={c.id}>
                     <td>
                       <strong>{c.title}</strong>
-                      <br />
-                      <span style={{ color: "var(--muted)" }}>
-                        Result {c.resultNumber} · Issue {c.issueNumber}
-                      </span>
                     </td>
                     <td>
                       <Badge tone={tone(c.status)}>{c.status}</Badge>

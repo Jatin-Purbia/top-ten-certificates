@@ -125,9 +125,7 @@ export function CycleWorkspace({ id }: { id: string }) {
               {c.status}
             </Badge>
           </div>
-          <h1>
-            {c.title} · Result {c.resultNumber}
-          </h1>
+          <h1>{c.title}</h1>
           <p>
             Published {formatIndia(c.publicationAt)} · Certificate deadline{" "}
             {formatIndia(c.expiresAt)}
@@ -201,7 +199,7 @@ export function CycleWorkspace({ id }: { id: string }) {
                 <tr>
                   <th>Rank</th>
                   <th>Candidate</th>
-                  <th>Reference ID</th>
+                  <th>Serial number</th>
                   <th>Mobile</th>
                   <th>Score</th>
                   <th>Download</th>
