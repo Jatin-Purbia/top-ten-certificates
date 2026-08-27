@@ -452,6 +452,24 @@ export class Store implements OnModuleInit {
     await this.audit(actorId, "cycle.slug_regenerated", "result_cycle", id, {});
     return this.getCycle(id);
   }
+  async deleteCycle(id: string, actorId: string) {
+    const cycle = await this.getCycle(id);
+    if (!cycle) return false;
+    // Published/expired/purged cycles may already have issued certificate
+    // links out in the world — deleting those out from under candidates
+    // would break them. Only pre-publication cycles are safe to remove.
+    if (cycle.status !== "draft" && cycle.status !== "scheduled")
+      throw new Error("CYCLE_NOT_DELETABLE");
+    if (!this.demo) {
+      await this.col("candidates").deleteMany({ cycleId: id } as any);
+      await this.col("result_cycles").deleteOne({ _id: id } as any);
+    } else {
+      this.candidates = this.candidates.filter((c) => c.cycleId !== id);
+      this.cycles = this.cycles.filter((c) => c.id !== id);
+    }
+    await this.audit(actorId, "cycle.deleted", "result_cycle", id, {});
+    return true;
+  }
   async listCandidates(cycleId: string): Promise<Candidate[]> {
     if (!this.demo)
       return this.col("candidates")
@@ -620,8 +638,6 @@ export class Store implements OnModuleInit {
     const c = await this.candidateById(id);
     if (!c) return false;
     const cycle = await this.getCycle(c.cycleId);
-    if (cycle?.status !== "draft")
-      throw new Error("PUBLISHED_CANDIDATE_DELETE");
     if (!this.demo) {
       await this.col("candidates").deleteOne({ _id: id } as any);
     } else {

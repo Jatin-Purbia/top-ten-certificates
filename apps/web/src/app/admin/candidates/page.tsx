@@ -4,14 +4,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { candidateInputSchema, type CandidateInput, type Candidate } from '@pathey/types';
-import { Badge, Button, Card } from '@pathey/ui';
+import { Badge, Button, Card, useConfirm } from '@pathey/ui';
 import { adminFetch, previewAdmin } from '@/lib/api';
 import { CandidateFields, candidateToFormValues } from '@/components/candidate-fields';
 import { CertificatePreviewModal } from '@/components/certificate-preview-modal';
 
+type Row = Candidate & { cycleId: string; cycleTitle: string; cycleStatus: string };
+
 export default function Candidates() {
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const [editing, setEditing] = useState<Candidate | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewing, setPreviewing] = useState<Candidate | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState('');
@@ -58,7 +62,19 @@ export default function Candidates() {
   });
   const isPending = cycles.isPending || (cycleList.length > 0 && candidates.isPending);
   const error = cycles.error ?? candidates.error;
-  const rows = candidates.data ?? [];
+  const rows: Row[] = candidates.data ?? [];
+  const allSelected = rows.length > 0 && rows.every((p) => selected.has(p.id));
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(rows.map((p) => p.id)));
+  };
 
   const editForm = useForm<CandidateInput>({
     resolver: zodResolver(candidateInputSchema),
@@ -78,6 +94,33 @@ export default function Candidates() {
     editForm.reset(candidateToFormValues(p));
     setEditing(p);
   };
+  const bulkDelete = useMutation<any, Error, string[]>({
+    mutationFn: async (ids) => {
+      await Promise.all(ids.map((id) => adminFetch<any>(`/admin/candidates/${id}`, { method: 'DELETE' })));
+    },
+    onSuccess: () => {
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ['all-candidates', cycleIds] });
+    },
+  });
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    const selectedRows = rows.filter((p) => selected.has(p.id));
+    const includesPublished = selectedRows.some((p) => p.cycleStatus !== 'draft');
+    const count = selected.size;
+    const message = includesPublished
+      ? `Delete ${count} candidate${count > 1 ? 's' : ''}? Some are in cycles that are already published or expired — their certificate links will stop working immediately, even if already downloaded. This cannot be undone.`
+      : `Delete ${count} candidate${count > 1 ? 's' : ''}? This cannot be undone.`;
+    if (
+      !(await confirmDialog(message, {
+        title: 'Delete candidates',
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    )
+      return;
+    bulkDelete.mutate([...selected]);
+  };
 
   return (
     <>
@@ -86,7 +129,15 @@ export default function Candidates() {
           <h1>Candidate management</h1>
           <p>All candidates across every result cycle. Edit here, or open a cycle to add, import, preview, or manage claim credentials.</p>
         </div>
+        {selected.size > 0 && (
+          <Button variant="danger" onClick={handleBulkDelete} disabled={bulkDelete.isPending}>
+            {bulkDelete.isPending ? 'Deleting…' : `Delete selected (${selected.size})`}
+          </Button>
+        )}
       </div>
+      {bulkDelete.error && (
+        <p className="notice notice-danger">{bulkDelete.error.message}</p>
+      )}
       <Card>
         {isPending ? (
           <p>Loading…</p>
@@ -99,6 +150,15 @@ export default function Candidates() {
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={rows.length === 0}
+                      aria-label="Select all candidates"
+                    />
+                  </th>
                   <th>Rank</th>
                   <th>Candidate</th>
                   <th>Cycle</th>
@@ -109,8 +169,16 @@ export default function Candidates() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p: Candidate & { cycleId: string; cycleTitle: string; cycleStatus: string }) => (
+                {rows.map((p) => (
                   <tr key={p.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(p.id)}
+                        onChange={() => toggleSelected(p.id)}
+                        aria-label={`Select ${p.nameHindi || p.nameEnglish}`}
+                      />
+                    </td>
                     <td>
                       <strong>#{p.rank}</strong>
                     </td>

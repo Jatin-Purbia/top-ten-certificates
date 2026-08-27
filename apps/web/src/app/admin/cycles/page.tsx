@@ -9,7 +9,7 @@ import {
   type CycleInput,
   type ResultCycle,
 } from "@pathey/types";
-import { Badge, Button, Card, Field } from "@pathey/ui";
+import { Badge, Button, Card, Field, useConfirm } from "@pathey/ui";
 import { adminFetch, formatIndia } from "@/lib/api";
 const tone = (s: string) =>
   s === "published"
@@ -17,18 +17,30 @@ const tone = (s: string) =>
     : s === "expired" || s === "purged"
       ? "danger"
       : "warning";
-const initialPublicationAt = new Date(Date.now() + 86_400_000).toISOString();
-// datetime-local inputs need "YYYY-MM-DDTHH:mm" with no timezone offset —
-// this trims the stored ISO string down to that instead of reformatting it,
-// so the same field works for both display and re-submission.
-const toDatetimeLocal = (iso: string) => iso.slice(0, 16);
+// datetime-local inputs need "YYYY-MM-DDTHH:mm" in local wall-clock time —
+// shift by the timezone offset before trimming, otherwise a stored UTC ISO
+// string gets mislabeled as local time and displays the wrong clock time.
+const toDatetimeLocal = (iso: string) => {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
+const initialPublicationAt = toDatetimeLocal(
+  new Date(Date.now() + 86_400_000).toISOString(),
+);
+// cycleInputSchema requires a full ISO datetime with "Z" — the raw
+// datetime-local value ("YYYY-MM-DDTHH:mm", local time) fails that
+// validator as-is, so convert it before it reaches the zod resolver.
+const localToIso = (value: string) => (value ? new Date(value).toISOString() : value);
 
 export default function Cycles() {
   const [search, setSearch] = useState(""),
     [status, setStatus] = useState(""),
     [open, setOpen] = useState(false),
     [editing, setEditing] = useState<ResultCycle | null>(null),
-    qc = useQueryClient();
+    qc = useQueryClient(),
+    confirmDialog = useConfirm();
   const { data, isPending, error } = useQuery({
     queryKey: ["cycles", search, status],
     queryFn: () =>
@@ -40,7 +52,6 @@ export default function Cycles() {
     resolver: zodResolver(cycleInputSchema),
     defaultValues: {
       title: "",
-      resultNumber: "",
       publicationAt: initialPublicationAt,
       status: "draft",
     },
@@ -68,10 +79,25 @@ export default function Cycles() {
       setEditing(null);
     },
   });
+  const remove = useMutation({
+    mutationFn: (c: ResultCycle) =>
+      adminFetch(`/admin/cycles/${c.id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cycles"] }),
+  });
+  const deleteCycle = async (c: ResultCycle) => {
+    if (
+      !(await confirmDialog(`Delete "${c.title}"? This cannot be undone.`, {
+        title: "Delete result cycle",
+        confirmLabel: "Delete",
+        danger: true,
+      }))
+    )
+      return;
+    remove.mutate(c);
+  };
   const openEdit = (c: ResultCycle) => {
     editForm.reset({
       title: c.title,
-      resultNumber: c.resultNumber,
       publicationAt: toDatetimeLocal(c.publicationAt),
       status: c.status === "scheduled" ? "scheduled" : "draft",
     });
@@ -88,6 +114,9 @@ export default function Cycles() {
         <Button onClick={() => setOpen(true)}>Create cycle</Button>
       </div>
       <Card>
+        {remove.error && (
+          <p className="notice notice-danger">{remove.error.message}</p>
+        )}
         <div className="toolbar">
           <input
             className="input"
@@ -153,6 +182,15 @@ export default function Cycles() {
                         >
                           Manage
                         </Link>
+                        {(c.status === "draft" ||
+                          c.status === "scheduled") && (
+                          <button
+                            className="btn btn-danger"
+                            onClick={() => deleteCycle(c)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -179,12 +217,7 @@ export default function Cycles() {
             <h2 id="new-cycle-title">Create result cycle</h2>
             <form
               className="form-grid"
-              onSubmit={form.handleSubmit((v) =>
-                create.mutate({
-                  ...v,
-                  publicationAt: new Date(v.publicationAt).toISOString(),
-                }),
-              )}
+              onSubmit={form.handleSubmit((v) => create.mutate(v))}
             >
               <Field
                 label="Quiz / competition title"
@@ -192,16 +225,9 @@ export default function Cycles() {
                 error={form.formState.errors.title?.message}
               />
               <Field
-                label="Result number"
-                {...form.register("resultNumber")}
-                error={form.formState.errors.resultNumber?.message}
-              />
-              <Field
                 label="Publication date and time"
                 type="datetime-local"
-                {...form.register("publicationAt", {
-                  setValueAs: (value) => value ? new Date(value).toISOString() : value,
-                })}
+                {...form.register("publicationAt", { setValueAs: localToIso })}
                 error={form.formState.errors.publicationAt?.message}
               />
               {create.error && (
@@ -254,12 +280,7 @@ export default function Cycles() {
               className="form-grid"
               onSubmit={editForm.handleSubmit((v) => {
                 const patch: Partial<CycleInput> = editable
-                  ? {
-                      ...v,
-                      publicationAt: v.publicationAt
-                        ? new Date(v.publicationAt).toISOString()
-                        : undefined,
-                    }
+                  ? { ...v, publicationAt: v.publicationAt || undefined }
                   : { title: v.title };
                 update.mutate(patch);
               })}
@@ -272,14 +293,9 @@ export default function Cycles() {
               {editable && (
                 <>
                   <Field
-                    label="Result number"
-                    {...editForm.register("resultNumber")}
-                    error={editForm.formState.errors.resultNumber?.message}
-                  />
-                  <Field
                     label="Publication date and time"
                     type="datetime-local"
-                    {...editForm.register("publicationAt")}
+                    {...editForm.register("publicationAt", { setValueAs: localToIso })}
                     error={editForm.formState.errors.publicationAt?.message}
                   />
                   <label className="field span-2">

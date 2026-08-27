@@ -74,6 +74,26 @@ export function CycleWorkspace({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["cycle", id] });
     },
   });
+  const remove = useMutation<any, Error, string>({
+    mutationFn: (candidateId: string) =>
+      adminFetch<any>(`/admin/candidates/${candidateId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setError("");
+      qc.invalidateQueries({ queryKey: ["candidates", id] });
+      qc.invalidateQueries({ queryKey: ["cycle", id] });
+    },
+    onError: (e) => setError(e.message),
+  });
+  const deleteCandidate = async (p: Candidate) => {
+    const name = p.nameHindi || p.nameEnglish;
+    const message =
+      cycle.data?.data?.status === "draft"
+        ? `Delete ${name}? This cannot be undone.`
+        : `Delete ${name}? This cycle is already ${cycle.data?.data?.status} — their certificate link will stop working immediately, even if already downloaded. This cannot be undone.`;
+    if (!(await confirmDialog(message, { title: "Delete candidate", confirmLabel: "Delete", danger: true })))
+      return;
+    remove.mutate(p.id);
+  };
   const publish = async () => {
     if (
       !(await confirmDialog(
@@ -252,6 +272,9 @@ export function CycleWorkspace({ id }: { id: string }) {
                           }}
                         >
                           Edit
+                        </button>
+                        <button className="btn btn-danger" onClick={() => deleteCandidate(p)}>
+                          Delete
                         </button>
                       </div>
                     </td>

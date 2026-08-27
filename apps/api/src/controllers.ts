@@ -370,6 +370,14 @@ export class AdminController {
   ) {
     return { data: await this.store.regenerateSlug(id, actor(req)) };
   }
+  @Delete("cycles/:id") @Roles("super_admin") async deleteCycle(
+    @Param("id") id: string,
+    @Req() req: AdminRequest,
+  ) {
+    const deleted = await this.store.deleteCycle(id, actor(req));
+    if (!deleted) throw new NotFoundException("Cycle not found");
+    return { data: { deleted } };
+  }
   @Get("cycles/:id/qr") async qr(
     @Param("id") id: string,
     @Query("format") fmt = "svg",
