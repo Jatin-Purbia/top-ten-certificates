@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import sharp from "sharp";
+import ExcelJS from "exceljs";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Candidate, ResultCycle } from "@pathey/types";
@@ -259,5 +260,56 @@ export class ExportService {
   }
   filename(candidate: Candidate) {
     return `${sanitizeFilename(candidate.nameEnglish)}-${sanitizeFilename(candidate.certificateNumber ?? candidate.id)}.pdf`;
+  }
+  async candidatesExcel(cycle: ResultCycle, candidates: Candidate[]) {
+    const fmtDate = (value: string | null) =>
+      value
+        ? new Intl.DateTimeFormat("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: "Asia/Kolkata",
+          }).format(new Date(value))
+        : "";
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Pathey Kan";
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet("Candidates");
+    sheet.columns = [
+      { header: "Rank", key: "rank", width: 8 },
+      { header: "Serial number", key: "participantId", width: 16 },
+      { header: "Name (Hindi)", key: "nameHindi", width: 24 },
+      { header: "Guardian name", key: "guardianName", width: 24 },
+      { header: "Class", key: "className", width: 10 },
+      { header: "Age", key: "age", width: 8 },
+      { header: "City", key: "city", width: 18 },
+      { header: "Address", key: "address", width: 30 },
+      { header: "Mobile", key: "phone", width: 14 },
+      { header: "Score", key: "score", width: 10 },
+      { header: "Certificate number", key: "certificateNumber", width: 20 },
+      { header: "Result date", key: "resultDate", width: 14 },
+      { header: "Downloads", key: "downloadCount", width: 12 },
+      { header: "First downloaded", key: "firstDownloadedAt", width: 22 },
+      { header: "Last downloaded", key: "lastDownloadedAt", width: 22 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const c of candidates.sort((a, b) => a.rank - b.rank))
+      sheet.addRow({
+        rank: c.rank,
+        participantId: c.participantId ?? "",
+        nameHindi: c.nameHindi?.trim() || c.nameEnglish,
+        guardianName: c.guardianName,
+        className: c.className,
+        age: c.age,
+        city: c.city ?? "",
+        address: c.address ?? "",
+        phone: c.phone,
+        score: c.score,
+        certificateNumber: c.certificateNumber ?? "",
+        resultDate: c.resultDate,
+        downloadCount: c.downloadCount,
+        firstDownloadedAt: fmtDate(c.firstDownloadedAt),
+        lastDownloadedAt: fmtDate(c.lastDownloadedAt),
+      });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 }

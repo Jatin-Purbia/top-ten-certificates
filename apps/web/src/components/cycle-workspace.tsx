@@ -9,7 +9,7 @@ import {
   type Candidate,
 } from "@pathey/types";
 import { Badge, Button, Card, useConfirm } from "@pathey/ui";
-import { adminFetch, previewAdmin, formatIndia } from "@/lib/api";
+import { adminFetch, downloadAdmin, previewAdmin, formatIndia } from "@/lib/api";
 import { CandidateFields, candidateToFormValues } from "./candidate-fields";
 import { CertificatePreviewModal } from "./certificate-preview-modal";
 
@@ -93,6 +93,21 @@ export function CycleWorkspace({ id }: { id: string }) {
     if (!(await confirmDialog(message, { title: "Delete candidate", confirmLabel: "Delete", danger: true })))
       return;
     remove.mutate(p.id);
+  };
+  const [exporting, setExporting] = useState(false);
+  const exportExcel = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      await downloadAdmin(
+        `/admin/cycles/${id}/candidates/export`,
+        `candidates-${c?.resultNumber || id}.xlsx`,
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
   };
   const publish = async () => {
     if (
@@ -197,6 +212,13 @@ export function CycleWorkspace({ id }: { id: string }) {
             <p>Certificates are accessed with the mobile number on file.</p>
           </div>
           <div className="actions">
+            <Button
+              variant="secondary"
+              onClick={exportExcel}
+              disabled={exporting || !candidateRows.length}
+            >
+              {exporting ? "Exporting…" : "Export to Excel"}
+            </Button>
             <Button
               onClick={() => {
                 addForm.reset();

@@ -36,7 +36,7 @@ import {
   adminSecret,
   type AdminRequest,
 } from "./security.js";
-import { publicCycleState, sha256 } from "./domain.js";
+import { publicCycleState, sanitizeFilename, sha256 } from "./domain.js";
 
 const genericClaimError = "No certificate was found for this mobile number.";
 const expiredEn =
@@ -431,6 +431,24 @@ export class AdminController {
   }
   @Get("cycles/:id/candidates") async candidates(@Param("id") id: string) {
     return { data: await this.store.listCandidates(id) };
+  }
+  @Get("cycles/:id/candidates/export") async exportCandidates(
+    @Param("id") id: string,
+    @Res() res: Response,
+  ) {
+    const cycle = await this.store.getCycle(id);
+    if (!cycle) throw new NotFoundException("Cycle not found");
+    const candidates = await this.store.listCandidates(id);
+    const file = await this.exports.candidatesExcel(cycle, candidates);
+    res
+      .type(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      )
+      .setHeader(
+        "Content-Disposition",
+        `attachment; filename="candidates-${sanitizeFilename(cycle.resultNumber || cycle.title)}.xlsx"`,
+      )
+      .send(file);
   }
   @Post("cycles/:id/candidates")
   @Roles("super_admin", "certificate_admin")
