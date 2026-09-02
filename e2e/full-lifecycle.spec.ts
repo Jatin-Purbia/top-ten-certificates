@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 const api = 'http://localhost:4000/api/v1';
 const adminHeaders = { 'x-demo-admin': 'demo-super-admin' };
 
-test('complete certificate lifecycle is private, time-bound, and purgeable', async ({ page, request }, testInfo) => {
+test('complete certificate lifecycle is private, time-bound, and closes on schedule', async ({ page, request }, testInfo) => {
   test.setTimeout(90_000);
   test.skip(testInfo.project.name === 'mobile', 'Lifecycle mutation runs once; mobile layout is covered separately.');
   const suffix = `${Date.now()}`.slice(-8);
@@ -78,12 +78,12 @@ test('complete certificate lifecycle is private, time-bound, and purgeable', asy
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Download period ended' })).toBeVisible();
 
-  const purge = await request.post(`${api}/internal/jobs/purge-expired-certificates`, {
+  const retention = await request.post(`${api}/internal/jobs/purge-expired-certificates`, {
     headers: { 'x-internal-job-secret': process.env.INTERNAL_JOB_SECRET ?? 'development-internal-job-secret' },
   });
-  expect(purge.ok()).toBeTruthy();
+  expect(retention.ok()).toBeTruthy();
   const remaining = await request.get(`${api}/admin/cycles/${cycle.id}/candidates`, { headers: adminHeaders });
-  expect((await remaining.json()).data).toHaveLength(0);
-  const purgedCycle = await request.get(`${api}/admin/cycles/${cycle.id}`, { headers: adminHeaders });
-  expect((await purgedCycle.json()).data.status).toBe('purged');
+  expect((await remaining.json()).data).toHaveLength(rows.length);
+  const closedCycle = await request.get(`${api}/admin/cycles/${cycle.id}`, { headers: adminHeaders });
+  expect((await closedCycle.json()).data.status).toBe('expired');
 });

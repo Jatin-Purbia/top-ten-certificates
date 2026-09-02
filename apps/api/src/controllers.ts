@@ -631,6 +631,6 @@ export class InternalController {
       !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
     )
       throw new UnauthorizedException();
-    return { data: await this.store.purgeExpired() };
+    return { data: await this.store.closeExpiredWindows() };
   }
 }

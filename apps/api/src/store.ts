@@ -2,8 +2,6 @@ import { Injectable, OnModuleInit } from "@nestjs/common";
 import { MongoClient, type Db, type Document } from "mongodb";
 import { verify } from "argon2";
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
 import { nanoid } from "nanoid";
 import type {
   AdminRole,
@@ -41,7 +39,8 @@ export type Cleanup = {
   id: string;
   cycleId: string;
   status: string;
-  deletedRecords: number;
+  /** Candidate records left untouched in MongoDB by the retention job. */
+  retainedRecords: number;
   startedAt: string;
   completedAt: string | null;
   errorCode: string | null;
@@ -67,7 +66,6 @@ const iso = () => new Date().toISOString();
 const withId = <T extends { id: string }>(item: T) => ({ ...item, _id: item.id });
 const noId = { projection: { _id: 0 } } as const;
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const photoDir = () => process.env.CANDIDATE_PHOTO_DIR ?? "./storage/candidate-photos";
 
 @Injectable()
 export class Store implements OnModuleInit {
@@ -894,11 +892,17 @@ export class Store implements OnModuleInit {
       recentActivity: (await this.listAudits()).slice(0, 8),
     };
   }
-  async purgeExpired() {
+  /**
+   * Retention job. Closes the public download window for cycles whose deadline
+   * has passed: the cycle moves to `expired` and every live claim session is
+   * dropped so an open session cannot keep downloading. Candidate records,
+   * download history and photos are deliberately retained in MongoDB — this
+   * job never deletes personal data. Permanent erasure stays a separate,
+   * explicit administrator action.
+   */
+  async closeExpiredWindows() {
     const cycles = (await this.listCycles()).filter(
-      (c) =>
-        ["published", "expired"].includes(c.status) &&
-        new Date(c.expiresAt) <= new Date(),
+      (c) => c.status === "published" && new Date(c.expiresAt) <= new Date(),
     );
     const results = [];
     for (const cycle of cycles) {
@@ -906,7 +910,7 @@ export class Store implements OnModuleInit {
         id: randomUUID(),
         cycleId: cycle.id,
         status: "running",
-        deletedRecords: 0,
+        retainedRecords: 0,
         startedAt: iso(),
         completedAt: null,
         errorCode: null,
@@ -915,82 +919,56 @@ export class Store implements OnModuleInit {
       else await this.col("cleanup_runs").insertOne(withId(run));
       try {
         if (!this.demo) {
-          const photoDocs = await this.col("candidates")
-            .find(
-              { cycleId: cycle.id, photoPath: { $ne: null } },
-              { projection: { photoPath: 1 } },
-            )
-            .toArray();
-          const paths = photoDocs
-            .map((x) => x.photoPath as string | null)
-            .filter((p): p is string => Boolean(p));
-          await Promise.all(
-            paths.map((p) => rm(join(photoDir(), p), { force: true }).catch(() => {})),
-          );
           const session = this.mongo!.startSession();
-          let deleted = 0;
+          let retained = 0;
           try {
             await session.withTransaction(async () => {
               const nowIso = new Date().toISOString();
               const eligible = await this.col("result_cycles").findOne(
-                { _id: cycle.id, status: { $ne: "purged" }, expiresAt: { $lte: nowIso } } as any,
+                { _id: cycle.id, status: "published", expiresAt: { $lte: nowIso } } as any,
                 { session },
               );
               if (!eligible) {
-                deleted = 0;
+                retained = 0;
                 return;
               }
               const candidateDocs = await this.col("candidates")
                 .find({ cycleId: cycle.id }, { session, projection: { _id: 1 } })
                 .toArray();
               const ids = candidateDocs.map((d) => d._id as string);
-              if (ids.length) {
+              if (ids.length)
                 await this.col("claim_sessions").deleteMany(
                   { candidateId: { $in: ids } },
                   { session },
                 );
-                await this.col("certificate_download_events").deleteMany(
-                  { candidateId: { $in: ids } },
-                  { session },
-                );
-                await this.col("candidates").deleteMany(
-                  { cycleId: cycle.id },
-                  { session },
-                );
-              }
-              deleted = ids.length;
+              retained = ids.length;
               await this.col("result_cycles").updateOne(
                 { _id: cycle.id } as any,
-                { $set: { status: "purged", purgedAt: iso(), updatedAt: iso() } },
+                { $set: { status: "expired", updatedAt: iso() } },
                 { session },
               );
             });
           } finally {
             await session.endSession();
           }
-          run.deletedRecords = deleted;
+          run.retainedRecords = retained;
         } else {
-          const before = this.candidates.length;
           const ids = this.candidates
             .filter((c) => c.cycleId === cycle.id)
             .map((c) => c.id);
           this.sessions = this.sessions.filter(
             (s) => !ids.includes(s.candidateId),
           );
-          this.candidates = this.candidates.filter(
-            (c) => c.cycleId !== cycle.id,
-          );
-          run.deletedRecords = before - this.candidates.length;
-          cycle.status = "purged";
-          cycle.purgedAt = iso();
-          cycle.candidateCount = 0;
+          run.retainedRecords = ids.length;
+          cycle.status = "expired";
+          cycle.updatedAt = iso();
         }
         run.status = "succeeded";
         run.completedAt = iso();
         results.push(run);
       } catch (e) {
         run.status = "failed";
-        run.errorCode = "PURGE_FAILED";
+        run.errorCode = "WINDOW_CLOSE_FAILED";
         run.completedAt = iso();
         results.push(run);
       }

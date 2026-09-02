@@ -16,6 +16,7 @@ export const sanitizeFilename = (value: string) => value.normalize('NFKD').repla
 export const csvSafe = (value: string) => /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 export const publicCycleState = (cycle: { status: CycleStatus; publicationAt: string; expiresAt: string }, now = new Date()) => {
   if (cycle.status === 'purged') return 'purged';
+  if (cycle.status === 'expired') return 'expired';
   if (cycle.status !== 'published') return new Date(cycle.publicationAt) > now ? 'not_open' : 'not_published';
   if (new Date(cycle.publicationAt) > now) return 'not_open';
   return isExpired(cycle.expiresAt, now) ? 'expired' : 'open';
