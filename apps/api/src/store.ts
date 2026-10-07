@@ -126,7 +126,7 @@ export class Store implements OnModuleInit {
     this.templates.push({
       id: templateId,
       name: "Approved Pathye Kan Certificate",
-      storagePath: "certificate-demo.jpeg",
+      storagePath: "certificate-demo.png",
       approved: true,
       active: true,
       fieldConfig: {},
@@ -719,7 +719,7 @@ export class Store implements OnModuleInit {
       item: Template = {
         id: randomUUID(),
         name: input.name ?? "Certificate Template",
-        storagePath: input.storagePath ?? "certificate-demo.jpeg",
+        storagePath: input.storagePath ?? "certificate-demo.png",
         approved: !!input.approved,
         active: !!input.active,
         fieldConfig: input.fieldConfig ?? {},

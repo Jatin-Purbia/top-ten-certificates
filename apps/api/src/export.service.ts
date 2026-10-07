@@ -35,10 +35,10 @@ const escapeXml = (s: string) =>
 const templatePath = () => {
   const choices = [
     process.env.CERTIFICATE_TEMPLATE_PATH,
-    join(process.env.INIT_CWD ?? process.cwd(), "certificate-demo.jpeg"),
-    join(process.env.INIT_CWD ?? process.cwd(), "assets", "certificate-demo.jpeg"),
-    resolve(process.cwd(), "../../certificate-demo.jpeg"),
-    resolve(process.cwd(), "../../assets/certificate-demo.jpeg"),
+    join(process.env.INIT_CWD ?? process.cwd(), "certificate-demo.png"),
+    join(process.env.INIT_CWD ?? process.cwd(), "assets", "certificate-demo.png"),
+    resolve(process.cwd(), "../../certificate-demo.png"),
+    resolve(process.cwd(), "../../assets/certificate-demo.png"),
   ].filter(Boolean) as string[];
   const found = choices.find(existsSync);
   if (!found) throw new Error("CERTIFICATE_TEMPLATE_MISSING");
@@ -103,7 +103,7 @@ const drawFitted = (
 // prints a dash rather than a numeral.
 const HINDI_ORDINALS = ["प्रथम", "द्वितीय", "तृतीय", "चतुर्थ", "पंचम"];
 const formatRank = (rank: number) => HINDI_ORDINALS[rank - 1] ?? "-";
-// Field centers were measured directly from assets/certificate-demo.jpeg's
+// Field centers were measured directly from assets/certificate-demo.png's
 // printed blanks/underlines (in template pixels, converted to the 841.89x595.28pt
 // page PDFKit renders it at) so text sits on the pre-printed lines regardless
 // of how long or short the value is.
@@ -118,7 +118,7 @@ const CERTIFICATE_FIELDS: Record<string, FitField> = {
   resultNumber: { centerX: 522, centerY: 294, maxWidth: 48, maxSize: 17, minSize: 9 },
   score: { centerX: 662, centerY: 294, maxWidth: 145, maxSize: 17, minSize: 9 },
   // 21pt matches the printed template's own text: measured the ink-height of
-  // "में श्री/सुश्री ... पुत्र/पुत्री श्री" directly from certificate-demo.jpeg
+  // "में श्री/सुश्री ... पुत्र/पुत्री श्री" directly from certificate-demo.png
   // (~47px at the template's 1600x1133 resolution, ~24.5pt once scaled to the
   // 841.89x595.28pt page) and solved for the Noto Sans Devanagari size that
   // produces the same ink-height for that text. Long values still shrink

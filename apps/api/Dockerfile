@@ -18,7 +18,7 @@ COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages/types ./packages/types
 COPY --from=build /app/packages/hindi-text ./packages/hindi-text
 COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/assets/certificate-demo.jpeg ./certificate-demo.jpeg
+COPY --from=build /app/assets/certificate-demo.png ./certificate-demo.png
 COPY --from=build /app/assets/fonts ./assets/fonts
 EXPOSE 4000
 CMD ["node","apps/api/dist/main.js"]

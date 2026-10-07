@@ -1,6 +1,6 @@
 # Approved certificate field map
 
-The supplied `assets/certificate-demo.jpeg` contains these personalised blanks:
+The supplied `assets/certificate-demo.png` contains these personalised blanks:
 
 | Artwork text | Application source | Entered by admin | Publicly requested |
 | --- | --- | --- | --- |

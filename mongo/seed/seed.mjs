@@ -54,7 +54,7 @@ if (!template) {
     _id: templateId,
     id: templateId,
     name: 'Approved Pathye Kan Certificate',
-    storagePath: 'certificate-demo.jpeg',
+    storagePath: 'certificate-demo.png',
     approved: true,
     active: true,
     fieldConfig: {},

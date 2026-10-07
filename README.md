@@ -2,7 +2,7 @@
 
 A TypeScript monorepo for fortnightly Top 10 publication cycles, private certificate claiming, print exports, and irreversible time-based data retention. It includes a Next.js 16 admin/public app, NestJS 11 REST API, a MongoDB replica set for transactional storage, self-issued admin JWTs with Argon2id password hashing, an OS-level scheduled cleanup job, and deterministic server-side PDF/QR generation.
 
-Only fictional development data is included. `certificate-demo.jpeg` is preserved as the approved certificate background; `magzine-cutout.jpeg` was used only as a layout reference.
+Only fictional development data is included. `certificate-demo.png` is preserved as the approved certificate background; `magzine-cutout.jpeg` was used only as a layout reference.
 
 ## Repository
 
@@ -38,7 +38,7 @@ docker compose up mongo mongo-init -d
 npm run seed
 ```
 
-`npm run seed` requires `MONGODB_URI`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD` in `.env`. MongoDB multi-document transactions (used for atomic candidate import and cycle purge) require a replica set; `docker-compose.yml` runs a single-node replica set for local use, which is sufficient — a production deployment should use a proper multi-node replica set for durability (a managed replica set such as MongoDB Atlas already satisfies this). Place the supplied `certificate-demo.jpeg` where `CERTIFICATE_TEMPLATE_PATH` points (defaults to the repo root). The seed script only creates indexes, the initial administrator (from `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`), the approved certificate template record, and the default availability setting — it inserts no result cycles or candidates. It is safe to run against a real deployment and is idempotent (re-running it does not duplicate the admin or template).
+`npm run seed` requires `MONGODB_URI`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD` in `.env`. MongoDB multi-document transactions (used for atomic candidate import and cycle purge) require a replica set; `docker-compose.yml` runs a single-node replica set for local use, which is sufficient — a production deployment should use a proper multi-node replica set for durability (a managed replica set such as MongoDB Atlas already satisfies this). Place the supplied `certificate-demo.png` where `CERTIFICATE_TEMPLATE_PATH` points (defaults to the repo root). The seed script only creates indexes, the initial administrator (from `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD`), the approved certificate template record, and the default availability setting — it inserts no result cycles or candidates. It is safe to run against a real deployment and is idempotent (re-running it does not duplicate the admin or template).
 
 ## Environment variables
 
