@@ -168,7 +168,7 @@ export class ExportService {
     doc
       .fontSize(12)
       .fillColor("#08214A")
-      .text(resultDate, 554, 500, { width: 90, align: "center" });
+      .text(resultDate, 554, 493, { width: 90, align: "center" });
     return collect(doc);
   }
   async qr(url: string, format: "svg" | "png", dark = false) {
