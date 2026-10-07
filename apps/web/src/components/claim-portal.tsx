@@ -221,7 +221,7 @@ export function ClaimPortal({ slug: fixedSlug }: { slug?: string }) {
               >
                 {available.map((item) => (
                   <option value={item.slug} key={item.slug}>
-                    {item.title}
+                    {item.resultNumber || item.title}
                   </option>
                 ))}
               </select>
