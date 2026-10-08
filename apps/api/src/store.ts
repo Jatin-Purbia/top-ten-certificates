@@ -63,6 +63,18 @@ type Session = {
 };
 
 const iso = () => new Date().toISOString();
+// downloadWindowDays is schema-bound to 1..365; keep it a rounded display value
+// derived from the explicit publish/deadline pair.
+// A published batch whose deadline has passed is reported as expired right
+// away, without waiting for the scheduled cleanup job to flip the stored value.
+const withLiveStatus = (c: ResultCycle): ResultCycle =>
+  c.status === "published" && new Date(c.expiresAt) <= new Date()
+    ? { ...c, status: "expired" }
+    : c;
+const windowDays = (start: Date, end: Date, fallback: number) => {
+  const days = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+  return days >= 1 && days <= 365 ? days : Math.min(365, Math.max(1, days || fallback));
+};
 const withId = <T extends { id: string }>(item: T) => ({ ...item, _id: item.id });
 const noId = { projection: { _id: 0 } } as const;
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -238,7 +250,8 @@ export class Store implements OnModuleInit {
       role: admin.role as AdminRole,
     };
   }
-  async listCycles(search = "", status = ""): Promise<ResultCycle[]> {
+  async listCycles(search = "", status = "", raw = false): Promise<ResultCycle[]> {
+    const live = raw ? (c: ResultCycle) => c : withLiveStatus;
     if (!this.demo) {
       const filter: Record<string, unknown> = {};
       if (status) filter.status = status;
@@ -264,7 +277,7 @@ export class Store implements OnModuleInit {
         .toArray();
       const countByCycle = new Map(counts.map((c) => [c._id as string, c.count as number]));
       return cycles.map((c) => ({
-        ...c,
+        ...live(c),
         candidateCount: countByCycle.get(c.id) ?? 0,
       }));
     }
@@ -277,7 +290,8 @@ export class Store implements OnModuleInit {
               .toLowerCase()
               .includes(search.toLowerCase())),
       )
-      .sort((a, b) => b.publicationAt.localeCompare(a.publicationAt));
+      .sort((a, b) => b.publicationAt.localeCompare(a.publicationAt))
+      .map(live);
   }
   async getCycle(id: string) {
     if (!this.demo) {
@@ -295,7 +309,11 @@ export class Store implements OnModuleInit {
   }
   async createCycle(input: CycleInput, actorId: string) {
     const now = iso(),
-      publication = new Date(input.publicationAt);
+      publication = new Date(input.publicationAt),
+      expiry = input.expiresAt
+        ? new Date(input.expiresAt)
+        : calculateExpiry(publication, this.availability.days);
+    if (expiry <= publication) throw new Error("INVALID_DEADLINE");
     // The create-cycle form no longer offers a template picker, so a cycle
     // created without one would otherwise be silently unpublishable later
     // (publish() requires an approved template) — default to the first
@@ -315,11 +333,8 @@ export class Store implements OnModuleInit {
       displayStartAt: publication.toISOString(),
       displayEndAt: calculateDisplayEnd(publication).toISOString(),
       publicationAt: publication.toISOString(),
-      expiresAt: calculateExpiry(
-        publication,
-        this.availability.days,
-      ).toISOString(),
-      downloadWindowDays: this.availability.days,
+      expiresAt: expiry.toISOString(),
+      downloadWindowDays: windowDays(publication, expiry, this.availability.days),
       status: input.status ?? "draft",
       certificateTemplateId,
       candidateCount: 0,
@@ -342,29 +357,44 @@ export class Store implements OnModuleInit {
     if (!cycle) return;
     if (cycle.status === "purged") throw new Error("PURGED_CYCLE");
     const allowed =
-      cycle.status === "published"
-        ? ["title", "issueNumber"]
+      cycle.status === "published" || cycle.status === "expired"
+        ? ["title", "issueNumber", "publicationAt", "expiresAt"]
         : [
             "title",
             "resultNumber",
             "issueNumber",
             "publicationAt",
+            "expiresAt",
             "certificateTemplateId",
             "status",
           ];
     const safe = Object.fromEntries(
       Object.entries(patch).filter(([k]) => allowed.includes(k)),
     );
-    if (safe.publicationAt && cycle.status !== "published") {
+    if (safe.publicationAt) {
       safe.displayStartAt = safe.publicationAt;
       safe.displayEndAt = calculateDisplayEnd(
         safe.publicationAt as string,
       ).toISOString();
-      safe.expiresAt = calculateExpiry(
-        safe.publicationAt as string,
-        cycle.downloadWindowDays,
-      ).toISOString();
+      if (!safe.expiresAt)
+        safe.expiresAt = calculateExpiry(
+          safe.publicationAt as string,
+          cycle.downloadWindowDays,
+        ).toISOString();
     }
+    if (safe.expiresAt) {
+      const start = new Date((safe.publicationAt as string) ?? cycle.publicationAt),
+        end = new Date(safe.expiresAt as string);
+      if (end <= start) throw new Error("INVALID_DEADLINE");
+      safe.downloadWindowDays = windowDays(start, end, cycle.downloadWindowDays);
+    }
+    // Extending the deadline of an expired batch reopens it for downloads.
+    if (
+      cycle.status === "expired" &&
+      safe.expiresAt &&
+      new Date(safe.expiresAt as string) > new Date()
+    )
+      safe.status = "published";
     safe.updatedAt = iso();
     if (!this.demo) {
       const updated = await this.col("result_cycles").findOneAndUpdate(
@@ -901,7 +931,7 @@ export class Store implements OnModuleInit {
    * explicit administrator action.
    */
   async closeExpiredWindows() {
-    const cycles = (await this.listCycles()).filter(
+    const cycles = (await this.listCycles("", "", true)).filter(
       (c) => c.status === "published" && new Date(c.expiresAt) <= new Date(),
     );
     const results = [];

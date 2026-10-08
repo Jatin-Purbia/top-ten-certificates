@@ -29,10 +29,14 @@ const toDatetimeLocal = (iso: string) => {
 const initialPublicationAt = toDatetimeLocal(
   new Date(Date.now() + 86_400_000).toISOString(),
 );
+const initialExpiresAt = toDatetimeLocal(
+  new Date(Date.now() + 31 * 86_400_000).toISOString(),
+);
 // cycleInputSchema requires a full ISO datetime with "Z" — the raw
 // datetime-local value ("YYYY-MM-DDTHH:mm", local time) fails that
 // validator as-is, so convert it before it reaches the zod resolver.
 const localToIso = (value: string) => (value ? new Date(value).toISOString() : value);
+const localToIsoOrUndef = (value: string) => (value ? new Date(value).toISOString() : undefined);
 
 export default function Cycles() {
   const [search, setSearch] = useState(""),
@@ -53,6 +57,7 @@ export default function Cycles() {
     defaultValues: {
       title: "",
       publicationAt: initialPublicationAt,
+      expiresAt: initialExpiresAt,
       status: "draft",
     },
   });
@@ -99,11 +104,13 @@ export default function Cycles() {
     editForm.reset({
       title: c.title,
       publicationAt: toDatetimeLocal(c.publicationAt),
+      expiresAt: toDatetimeLocal(c.expiresAt),
       status: c.status === "scheduled" ? "scheduled" : "draft",
     });
     setEditing(c);
   };
-  const editable = editing && editing.status !== "published" && editing.status !== "expired" && editing.status !== "purged";
+  const editable = editing && editing.status !== "purged";
+  const preLive = editing && (editing.status === "draft" || editing.status === "scheduled");
   return (
     <>
       <div className="page-head">
@@ -151,8 +158,8 @@ export default function Cycles() {
                   <th>Result</th>
                   <th>Status</th>
                   <th>Candidates</th>
-                  <th>Publication</th>
-                  <th>Deadline</th>
+                  <th>Publish date</th>
+                  <th>Download deadline</th>
                   <th />
                 </tr>
               </thead>
@@ -220,7 +227,7 @@ export default function Cycles() {
               onSubmit={form.handleSubmit((v) => create.mutate(v))}
             >
               <Field
-                label="Quiz / competition title"
+                label="Batch title (e.g. Batch 12)"
                 {...form.register("title")}
                 error={form.formState.errors.title?.message}
               />
@@ -229,6 +236,12 @@ export default function Cycles() {
                 type="datetime-local"
                 {...form.register("publicationAt", { setValueAs: localToIso })}
                 error={form.formState.errors.publicationAt?.message}
+              />
+              <Field
+                label="Download deadline (date and time)"
+                type="datetime-local"
+                {...form.register("expiresAt", { setValueAs: localToIsoOrUndef })}
+                error={form.formState.errors.expiresAt?.message}
               />
               {create.error && (
                 <p className="notice notice-danger span-2">
@@ -271,22 +284,21 @@ export default function Cycles() {
             <h2 id="edit-cycle-title">Edit result cycle</h2>
             {!editable && (
               <p className="notice">
-                This cycle is {editing.status} — only the title can still be
-                changed. Use Publish/Expire on the cycle&apos;s own page for
-                status changes.
+                This cycle is {editing.status} and can no longer be edited.
               </p>
             )}
             <form
               className="form-grid"
               onSubmit={editForm.handleSubmit((v) => {
+                const { status: formStatus, ...rest } = v;
                 const patch: Partial<CycleInput> = editable
-                  ? { ...v, publicationAt: v.publicationAt || undefined }
+                  ? { ...rest, ...(preLive ? { status: formStatus } : {}), publicationAt: v.publicationAt || undefined, expiresAt: v.expiresAt || undefined }
                   : { title: v.title };
                 update.mutate(patch);
               })}
             >
               <Field
-                label="Quiz / competition title"
+                label="Batch title (e.g. Batch 12)"
                 {...editForm.register("title")}
                 error={editForm.formState.errors.title?.message}
               />
@@ -298,6 +310,13 @@ export default function Cycles() {
                     {...editForm.register("publicationAt", { setValueAs: localToIso })}
                     error={editForm.formState.errors.publicationAt?.message}
                   />
+                  <Field
+                    label="Download deadline (date and time)"
+                    type="datetime-local"
+                    {...editForm.register("expiresAt", { setValueAs: localToIsoOrUndef })}
+                    error={editForm.formState.errors.expiresAt?.message}
+                  />
+                  {preLive && (
                   <label className="field span-2">
                     Status
                     <select {...editForm.register("status")}>
@@ -305,6 +324,7 @@ export default function Cycles() {
                       <option value="scheduled">scheduled</option>
                     </select>
                   </label>
+                  )}
                 </>
               )}
               {update.error && (

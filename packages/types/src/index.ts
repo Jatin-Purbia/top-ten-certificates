@@ -33,6 +33,7 @@ export type Candidate = CandidateInput & { id: string; cycleId: string; publicCe
 export const cycleInputSchema = z.object({
   title: z.string().trim().min(3).max(160), resultNumber: z.string().trim().max(40).optional(),
   issueNumber: z.string().trim().max(40).optional(), publicationAt: z.string().datetime(),
+  expiresAt: z.string().datetime().optional(),
   certificateTemplateId: z.string().uuid().nullable().optional(), status: z.enum(['draft', 'scheduled']).optional()
 });
 export type CycleInput = z.infer<typeof cycleInputSchema>;
