@@ -27,3 +27,5 @@
    - API docs: http://localhost:4000/api/docs
 
 To run against a real database instead of demo data, set `DEMO_MODE=false` in `.env`, then run `docker compose up mongo mongo-init -d` and `npm run seed`. To build and start production containers, run `docker compose up --build`.
+
+End
